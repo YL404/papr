@@ -1,12 +1,8 @@
 <div align="center">
 
-<img src="docs/logo.svg" alt="Papr" width="96" height="96" />
-
 # Papr
 
 **A fast, native RSS reader — and a CLI your AI agent can actually drive.**
-
-<img src="docs/screenshot.webp" alt="Papr" width="820" />
 
 </div>
 

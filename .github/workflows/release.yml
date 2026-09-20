@@ -20,22 +20,10 @@ jobs:
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
             cli_target: x86_64-apple-darwin
-          - platform: ubuntu-22.04
-            args: ""
-            cli_target: x86_64-unknown-linux-gnu
-          - platform: windows-latest
-            args: ""
-            cli_target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Linux dependencies
-        if: matrix.platform == 'ubuntu-22.04'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
 
       - name: Install pnpm
         uses: pnpm/action-setup@v4
@@ -152,13 +140,6 @@ jobs:
           set -euo pipefail
           tar -czf "papr-${{ matrix.cli_target }}.tar.gz" \
             -C "target/${{ matrix.cli_target }}/release" papr
-
-      - name: Package CLI (Windows)
-        if: matrix.platform == 'windows-latest'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path "target/${{ matrix.cli_target }}/release/papr.exe" `
-            -DestinationPath "papr-${{ matrix.cli_target }}.zip" -Force
 
       - name: Upload CLI to the release
         shell: bash
