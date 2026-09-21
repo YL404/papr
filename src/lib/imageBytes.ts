@@ -47,6 +47,19 @@ function sniffImageMime(b: Uint8Array): string | null {
   return null;
 }
 
+/** Hosts whose images reject a bare no-Referer request — the webview can't
+ *  vary the header per host, so these must go through the backend fetch path
+ *  (which walks Referer fallbacks) up front instead of waiting for onError.
+ *  少数派 CDN is the known offender. */
+export function needsImageProxy(src: string): boolean {
+  try {
+    const host = new URL(src).hostname.toLowerCase();
+    return host === "cdnfile.sspai.com" || host === "rssfile.sspai.com";
+  } catch {
+    return false;
+  }
+}
+
 /** Encode recovered image bytes as a self-contained data: URL.
  *
  *  Images that fail to load directly (hotlink-protected hosts) are refetched

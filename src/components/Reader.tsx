@@ -10,7 +10,7 @@ import { useTranslationJobs } from "../translation";
 import { useArticleActions } from "../hooks/articleActions";
 import { renderMarkdown } from "../lib/markdown";
 import { downloadBlob, imageFilename } from "../lib/download";
-import { imageDataUrl } from "../lib/imageBytes";
+import { imageDataUrl, needsImageProxy } from "../lib/imageBytes";
 import { fullDate } from "../lib/feedMeta";
 import { isMac } from "../lib/platform";
 import { reportError, toast } from "../toast";
@@ -31,15 +31,6 @@ function youtubeId(url: string | null): string | null {
   const m =
     url.match(/[?&]v=([\w-]{11})/) || url.match(/youtu\.be\/([\w-]{11})/);
   return m ? m[1] : null;
-}
-
-function needsImageProxy(src: string): boolean {
-  try {
-    const host = new URL(src).hostname.toLowerCase();
-    return host === "cdnfile.sspai.com" || host === "rssfile.sspai.com";
-  } catch {
-    return false;
-  }
 }
 
 /** Plain, entity-decoded text of an HTML body — for the reading-time estimate.

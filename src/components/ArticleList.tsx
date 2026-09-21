@@ -10,6 +10,7 @@ import { listTranslationKey, useListTranslation } from "../listTranslation";
 import { resolveRowTranslation } from "../lib/rowTranslation";
 import { relTime } from "../lib/feedMeta";
 import { isMac, modCombo } from "../lib/platform";
+import { imageDataUrl, needsImageProxy } from "../lib/imageBytes";
 import { reportError, toast } from "../toast";
 import { clampToViewport } from "../lib/viewport";
 import type { ArticleSummary, Feed } from "../types";
@@ -714,25 +715,79 @@ export default function ArticleList({ onToast }: Props) {
   );
 }
 
-/** Card-view thumbnail: the article image, or nothing. When a card has no
- *  usable image — none supplied and none extractable from the body, or the
- *  image fails to load — the card simply renders without a thumbnail rather
- *  than showing a generic placeholder. */
+/** Card/small-image view thumbnail: the article image, or nothing. When a card
+ *  has no usable image — none supplied and none extractable from the body, or
+ *  the image can't be loaded even after the backend retry — the card simply
+ *  renders without a thumbnail rather than showing a generic placeholder.
+ *
+ *  The webview sends image requests without a Referer: right for blacklist-
+ *  style hotlink protection (*.sinaimg.cn) but fatal on hosts that *require*
+ *  one (cdnfile.sspai.com 403s a bare request). The reader recovers such
+ *  images through the backend `fetch_image` path, which walks Referer
+ *  fallbacks; the list gets the same treatment here, or every feed served by
+ *  such a host would show a text-only list despite having images. Two paths,
+ *  mirroring the reader: proxy-eligible hosts are fetched up front (waiting
+ *  for onError leaves a broken state in WKWebView on some builds), everything
+ *  else gets one backend retry on error before being hidden. Recovered bytes
+ *  become a data: URL — blob: URLs are dropped by WKWebView under memory
+ *  pressure while scrolling a virtualized list. */
 function CardThumb({ article }: { article: ArticleSummary }) {
+  const imageUrl = article.imageUrl;
+  const [src, setSrc] = useState<string | null>(imageUrl);
   const [broken, setBroken] = useState(false);
-  // The virtualizer recycles this instance across rows — clear the error
-  // flag whenever the image URL changes.
-  useEffect(() => setBroken(false), [article.imageUrl]);
+  // One backend retry per URL — a host the backend can't satisfy either must
+  // not be re-requested every recycle of this row by the virtualizer.
+  const retried = useRef<string | null>(null);
 
-  if (!article.imageUrl || broken) return null;
+  // The virtualizer recycles this instance across rows — reset the recovered
+  // src and the error flag whenever the image URL changes.
+  useEffect(() => {
+    setSrc(imageUrl);
+    setBroken(false);
+    retried.current = null;
+  }, [imageUrl]);
+
+  // Proactive backend fetch for hosts that reject the webview's bare request
+  // (same trigger as the reader hero's proxy effect).
+  useEffect(() => {
+    if (!imageUrl || !needsImageProxy(imageUrl)) return;
+    let alive = true;
+    api
+      .fetchImage(imageUrl, article.url)
+      .then((buf) => {
+        if (alive) setSrc(imageDataUrl(imageUrl, buf));
+      })
+      .catch(() => {
+        if (alive) setBroken(true);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [imageUrl, article.url]);
+
+  if (!src || broken) return null;
+
+  const onError = () => {
+    // A data: URL that still errors (or a backend retry that already ran) is
+    // unfixable — stop showing a broken image.
+    if (retried.current === src || !/^https?:\/\//.test(src)) {
+      setBroken(true);
+      return;
+    }
+    retried.current = src;
+    api
+      .fetchImage(src, article.url)
+      .then((buf) => setSrc(imageDataUrl(src, buf)))
+      .catch(() => setBroken(true));
+  };
 
   return (
     <div className="art-thumb">
       <img
-        src={article.imageUrl}
+        src={src}
         alt=""
         loading="lazy"
-        onError={() => setBroken(true)}
+        onError={onError}
         style={{
           position: "absolute",
           inset: 0,

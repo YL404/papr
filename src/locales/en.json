@@ -287,7 +287,7 @@
       "details": "Details",
       "sidebarCounts": "Show unread counts in sidebar",
       "cardThumbs": "Show thumbnails on article cards",
-      "cardThumbsDesc": "Only applies in card view",
+      "cardThumbsDesc": "Applies to card and small-image views",
       "reduceMotion": "Reduce motion",
       "reduceMotionDesc": "Turn off interface transitions and animations"
     },

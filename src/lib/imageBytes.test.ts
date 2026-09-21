@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { imageBytes, imageDataUrl, imageMime } from "./imageBytes";
+import { imageBytes, imageDataUrl, imageMime, needsImageProxy } from "./imageBytes";
+
+describe("needsImageProxy", () => {
+  it("matches the hosts that reject a bare no-Referer request", () => {
+    expect(needsImageProxy("https://cdnfile.sspai.com/2025/a.png")).toBe(true);
+    expect(needsImageProxy("https://rssfile.sspai.com/b.jpg?x=1")).toBe(true);
+  });
+
+  it("passes ordinary hosts and unparseable sources through", () => {
+    expect(needsImageProxy("https://i.example.com/cover.png")).toBe(false);
+    // A subdomain the host check doesn't cover — the onError retry path
+    // handles those, so they must not be double-fetched up front.
+    expect(needsImageProxy("https://mirror.cdnfile.sspai.com/a.png")).toBe(false);
+    expect(needsImageProxy("not a url")).toBe(false);
+  });
+});
 
 describe("imageBytes", () => {
   it("keeps Uint8Array responses as bytes", () => {
