@@ -2231,6 +2231,12 @@ button { font-family: inherit; }
 }
 .article-body img {
   max-width: 100%;
+  /* Cap portrait images too (phone screenshots, manga strips): `height: auto`
+     alone lets one scale to the full column width and push pages of text
+     below the fold. max-width + max-height resolve through the CSS constraint
+     table, so the aspect ratio is preserved and the image shrinks to whichever
+     limit binds; the lightbox (click) still shows it full size. */
+  max-height: 70vh;
   height: auto;
   border-radius: 8px;
   margin: 1.2em auto;
