@@ -296,7 +296,7 @@ export default function Reader({ onToast }: Props) {
   const articleUrl = a?.url ?? null;
   // Anything that floats over the reading area must suspend the page view: the
   // child webview floats above the whole DOM, so it would otherwise occlude a
-  // covering modal (subscribe / settings / explore — issue #54), a context
+  // covering modal (subscribe / settings — issue #54), a context
   // menu raised over the reader (issue #74), or the tag picker. We *hide* the
   // webview rather than tear it down, so dismissing the overlay reveals the
   // already-loaded page instantly instead of reloading it (the bounds keep

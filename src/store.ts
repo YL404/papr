@@ -171,7 +171,7 @@ interface UiState {
    *  summary itself is an inline section at the top of the article that owns
    *  the generation — this is only the "please run it" signal. */
   aiSummaryRequest: number;
-  /** A covering modal (subscribe / settings / explore …) is open. The reader's
+  /** A covering modal (subscribe / settings …) is open. The reader's
    *  original-page view is a native child webview that floats above the whole
    *  DOM — including modals — so it must be torn down while one is up, or it
    *  occludes the dialog (issue #54). The reader effect watches this flag. */

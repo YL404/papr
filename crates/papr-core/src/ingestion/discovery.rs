@@ -34,7 +34,7 @@ pub struct DirectoryEntry {
     /// One-line description shown under the title.
     pub description: String,
     /// Primary language of the feed's content (`"en"`, `"zh"`, `"ja"`).
-    /// Explore recommends the slice matching the user's chosen UI language.
+    /// The add-feed box recommends the slice matching the user's UI language.
     pub lang: String,
 }
 
@@ -103,11 +103,11 @@ fn primary_lang(tag: &str) -> String {
 ///
 /// `lang` is matched against each entry's `lang` tag by primary subtag, so a
 /// `"zh-CN"` UI locale selects the `"zh"` slice. When the directory carries no
-/// entry for the requested language the search falls back to English, so
-/// Explore is never empty for a locale we have not curated feeds for yet.
+/// entry for the requested language the search falls back to English, so the
+/// suggestions are never empty for a locale we have not curated feeds for yet.
 ///
-/// An empty query returns the whole language slice (the UI shows it as a
-/// browsable gallery); otherwise an entry matches when the query is a
+/// An empty query returns the whole language slice; otherwise an entry matches
+/// when the query is a
 /// substring of its title, category, or description. Results preserve the
 /// directory's authored order.
 pub fn search_directory(query: &str, lang: &str) -> Vec<DiscoveryResult> {

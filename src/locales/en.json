@@ -73,24 +73,6 @@
     "discoverFromPage": "Found on this page",
     "discoverAdd": "Add"
   },
-  "explore": {
-    "title": "Explore feeds",
-    "subtitle": "Browse a curated directory of well-known feeds.",
-    "feedCount": "{{n}} curated feeds \u2014 pick a category, then subscribe.",
-    "searchPlaceholder": "Search the directory\u2026",
-    "searchLabel": "Search the feed directory",
-    "categories": "Categories",
-    "all": "All",
-    "add": "Add",
-    "adding": "Adding\u2026",
-    "subscribed": "Subscribed",
-    "subscribedToast": "Subscribed to {{title}}",
-    "loading": "Loading the directory\u2026",
-    "error": "Couldn't load the directory \u2014 try again.",
-    "noResults": "Nothing matches \u2014 try another keyword or category.",
-    "folderLabel": "Folder for new subscriptions",
-    "noFolder": "No folder"
-  },
   "app": {
     "resizeSidebar": "Resize sidebar",
     "resizeList": "Resize article list",
@@ -506,7 +488,6 @@
     "collapseFolder": "Collapse folder",
     "addFeedShortcut": "Add feed (A)",
     "refreshAll": "Refresh all (\u2318R)",
-    "explore": "Explore feeds",
     "settings": "Settings (\u2318,)",
     "toastMoved": "Moved {{feed}} \u2192 {{folder}}",
     "toastMovedTo": "Moved to {{folder}}",

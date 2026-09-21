@@ -15,8 +15,6 @@ import PromptDialog from "./PromptDialog";
 
 interface Props {
   onAddFeed: () => void;
-  /** Opens the Add-feed dialog on its Explore tab. */
-  onExplore: () => void;
   onOpenSettings: (section?: string) => void;
   onSearchClick: () => void;
   /** Refresh feeds. With no scope refreshes everything (the toolbar button);
@@ -83,7 +81,6 @@ function SbItem({
 
 export default function Sidebar({
   onAddFeed,
-  onExplore,
   onOpenSettings,
   onSearchClick,
   onRefresh,
@@ -831,13 +828,6 @@ export default function Sidebar({
           className={refreshing ? "spinning" : ""}
         >
           <Icon name="refresh" size={14} />
-        </button>
-        <button
-          title={t("sidebar.explore")}
-          aria-label={t("sidebar.explore")}
-          onClick={onExplore}
-        >
-          <Icon name="globe" size={14} />
         </button>
         <div className="spacer" />
         <button

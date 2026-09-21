@@ -19,7 +19,6 @@ import Reader from "./components/Reader";
 import CommandPalette, { type CommandAction } from "./components/CommandPalette";
 import SettingsDialog from "./components/SettingsDialog";
 import AddFeedDialog from "./components/AddFeedDialog";
-import ExploreDialog from "./components/ExploreDialog";
 import PromptDialog from "./components/PromptDialog";
 import PlayerBar from "./components/PlayerBar";
 import ResizeHandle from "./components/ResizeHandle";
@@ -103,8 +102,6 @@ export default function App() {
     open: false,
   });
   const [addFeed, setAddFeed] = useState(false);
-  // The standalone Explore (curated-directory marketplace) dialog.
-  const [explore, setExplore] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
 
   // Mirror "any covering modal is open" into the store. The reader's
@@ -113,8 +110,8 @@ export default function App() {
   // reader watches this flag and tears the view down while a modal is up.
   const setModalOpen = useUi((s) => s.setModalOpen);
   useEffect(() => {
-    setModalOpen(cpOpen || settings.open || addFeed || explore || newFolder);
-  }, [cpOpen, settings.open, addFeed, explore, newFolder, setModalOpen]);
+    setModalOpen(cpOpen || settings.open || addFeed || newFolder);
+  }, [cpOpen, settings.open, addFeed, newFolder, setModalOpen]);
 
   // ── apply appearance to the document root ──
   useEffect(() => {
@@ -476,7 +473,6 @@ export default function App() {
         <div className={`window ${focusMode ? "focus" : ""}`}>
           <Sidebar
             onAddFeed={() => setAddFeed(true)}
-            onExplore={() => setExplore(true)}
             onOpenSettings={openSettings}
             onSearchClick={() => setCpOpen(true)}
             onRefresh={doRefresh}
@@ -544,13 +540,6 @@ export default function App() {
 
       {addFeed && (
         <AddFeedDialog onClose={() => setAddFeed(false)} onToast={showToast} />
-      )}
-
-      {explore && (
-        <ExploreDialog
-          onClose={() => setExplore(false)}
-          onToast={showToast}
-        />
       )}
 
       {newFolder && (

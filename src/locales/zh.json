@@ -73,24 +73,6 @@
     "discoverFromPage": "\u5728\u6b64\u9875\u9762\u53d1\u73b0",
     "discoverAdd": "\u6dfb\u52a0"
   },
-  "explore": {
-    "title": "\u53d1\u73b0\u8ba2\u9605\u6e90",
-    "subtitle": "\u6d4f\u89c8\u7cbe\u9009\u7684\u77e5\u540d\u8ba2\u9605\u6e90\u76ee\u5f55\u3002",
-    "feedCount": "{{n}} \u4e2a\u7cbe\u9009\u8ba2\u9605\u6e90 \u2014 \u9009\u62e9\u5206\u7c7b\uff0c\u7136\u540e\u8ba2\u9605\u3002",
-    "searchPlaceholder": "\u641c\u7d22\u76ee\u5f55\u2026",
-    "searchLabel": "\u641c\u7d22\u8ba2\u9605\u6e90\u76ee\u5f55",
-    "categories": "\u5206\u7c7b",
-    "all": "\u5168\u90e8",
-    "add": "\u6dfb\u52a0",
-    "adding": "\u6dfb\u52a0\u4e2d\u2026",
-    "subscribed": "\u5df2\u8ba2\u9605",
-    "subscribedToast": "\u5df2\u8ba2\u9605 {{title}}",
-    "loading": "\u6b63\u5728\u52a0\u8f7d\u76ee\u5f55\u2026",
-    "error": "\u76ee\u5f55\u52a0\u8f7d\u5931\u8d25 \u2014 \u8bf7\u91cd\u8bd5\u3002",
-    "noResults": "\u6ca1\u6709\u5339\u914d\u9879 \u2014 \u6362\u4e2a\u5173\u952e\u8bcd\u6216\u5206\u7c7b\u8bd5\u8bd5\u3002",
-    "folderLabel": "\u65b0\u8ba2\u9605\u5f52\u5165\u7684\u6587\u4ef6\u5939",
-    "noFolder": "\u4e0d\u5f52\u5165\u6587\u4ef6\u5939"
-  },
   "app": {
     "resizeSidebar": "\u8c03\u6574\u4fa7\u680f\u5bbd\u5ea6",
     "resizeList": "\u8c03\u6574\u6587\u7ae0\u5217\u8868\u5bbd\u5ea6",
@@ -506,7 +488,6 @@
     "collapseFolder": "\u6298\u53e0\u6587\u4ef6\u5939",
     "addFeedShortcut": "\u6dfb\u52a0\u8ba2\u9605\u6e90 (A)",
     "refreshAll": "\u5237\u65b0\u6240\u6709 (\u2318R)",
-    "explore": "\u53d1\u73b0\u8ba2\u9605\u6e90",
     "settings": "\u8bbe\u7f6e (\u2318,)",
     "toastMoved": "\u5df2\u79fb\u52a8 {{feed}} \u2192 {{folder}}",
     "toastMovedTo": "\u5df2\u79fb\u52a8\u5230 {{folder}}",
