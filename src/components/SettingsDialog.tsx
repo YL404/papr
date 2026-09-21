@@ -68,7 +68,22 @@ export default function SettingsDialog({
   onAddFeed,
 }: Props) {
   const { t } = useTranslation();
-  const [section, setSection] = useState(initialSection ?? "general");
+  // An explicit `initialSection` (a deep link, e.g. the palette's "Import
+  // OPML") wins; otherwise reopen on the section the user last visited. The
+  // saved id is validated against SECTIONS so a stale key from an older build
+  // (section renamed or removed) falls back to "general" instead of landing on
+  // an empty pane.
+  const [section, setSection] = useState(() => {
+    if (initialSection) return initialSection;
+    const saved = localStorage.getItem("settingsSection");
+    return saved != null && SECTIONS.some((s) => s.id === saved)
+      ? saved
+      : "general";
+  });
+  // Remember the section across dialog reopens.
+  useEffect(() => {
+    localStorage.setItem("settingsSection", section);
+  }, [section]);
   const feeds = useQuery({ queryKey: ["feeds"], queryFn: api.listFeeds });
   const windowRef = useRef<HTMLDivElement>(null);
   const version = useAppVersion();
