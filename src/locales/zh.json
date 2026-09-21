@@ -13,9 +13,9 @@
     "loading": "\u52a0\u8f7d\u4e2d\u2026",
     "retry": "\u91cd\u8bd5",
     "justNow": "\u521a\u521a",
-    "relMinutes": "{{count}} \u5206\u949f",
-    "relHours": "{{count}} \u5c0f\u65f6",
-    "relDays": "{{count}} \u5929"
+    "relMinutes": "{{count}} \u5206\u949f前",
+    "relHours": "{{count}} \u5c0f\u65f6前",
+    "relDays": "{{count}} \u5929前"
   },
   "crash": {
     "title": "\u51fa\u4e86\u70b9\u95ee\u9898",
@@ -170,6 +170,7 @@
     "tbShare": "\u5206\u4eab",
     "tbTags": "\u6807\u7b7e",
     "tbFocusMode": "\u7126\u70b9\u9605\u8bfb (F)",
+    "tbWideMode": "\u5bbd\u5c4f\u6a21\u5f0f (W)",
     "tbOpenInBrowser": "\u5728\u6d4f\u89c8\u5668\u4e2d\u6253\u5f00 (\u2318O)",
     "tbWebView": "\u5728\u6b64\u6253\u5f00\u539f\u7f51\u9875",
     "episodePlay": "\u64ad\u653e\u97f3\u9891",

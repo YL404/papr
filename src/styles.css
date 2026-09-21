@@ -822,6 +822,7 @@ button { font-family: inherit; }
   flex-shrink: 0;
 }
 .art-sep { color: var(--muted-2); flex-shrink: 0; }
+.art-spacer { flex: 1; }
 .art-translate-status {
   display: inline-flex;
   align-items: center;
@@ -1092,6 +1093,7 @@ button { font-family: inherit; }
   overflow-wrap: break-word;
 }
 .article { max-width: var(--reader-width, 680px); }
+.article.wide { max-width: 1360px; }
 .article-body p { margin: 0 0 1.05em; }
 .article-body h2 {
   font-size: 22px;
@@ -2120,12 +2122,14 @@ button { font-family: inherit; }
   border-radius: 8px;
   margin: 0 0 1.2em;
   display: block;
+  margin-left: auto;
+  margin-right: auto;
 }
 .article-body img {
   max-width: 100%;
   height: auto;
   border-radius: 8px;
-  margin: 1.2em 0;
+  margin: 1.2em auto;
   display: block;
   cursor: zoom-in;
 }

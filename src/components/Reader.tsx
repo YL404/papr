@@ -198,6 +198,7 @@ export default function Reader({ onToast }: Props) {
   // Sites that set X-Frame-Options / CSP frame-ancestors refuse to load this
   // way — the in-frame hint points those back to "open in browser".
   const [viewMode, setViewMode] = useState<"reader" | "web">("reader");
+  const [wide, setWide] = useState(false);
   const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number;
@@ -894,6 +895,15 @@ export default function Reader({ onToast }: Props) {
           <Icon name="globe" size={16} />
         </button>
         <div className="tb-btn spacer" />
+        <button
+          className={`tb-btn ${wide ? "on" : ""}`}
+          title={t("reader.tbWideMode")}
+          aria-label={t("reader.tbWideMode")}
+          aria-pressed={wide}
+          onClick={() => setWide((v) => !v)}
+        >
+          <Icon name="wide" size={16} />
+        </button>
         {a.url && (
           <button
             className={`tb-btn ${viewMode === "web" ? "on" : ""}`}
@@ -957,7 +967,7 @@ export default function Reader({ onToast }: Props) {
           });
         }}
       >
-        <article className="article reader-content" key={a.id}>
+        <article className={`article reader-content ${wide ? "wide" : ""}`} key={a.id}>
           <button
             type="button"
             className="article-feed"
@@ -1268,21 +1278,16 @@ export default function Reader({ onToast }: Props) {
 function AISummary({ article }: { article: ArticleDetail }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  // Initialised from the article's stored summary (if any). The parent keys
-  // the article by id, so a switch remounts this component and re-runs this
-  // initialiser — no separate "reset on article change" effect is needed.
   const [text, setText] = useState<string | null>(article.aiSummary);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  // The failure detail, shown in the section itself rather than only in the
-  // transient toast — a user who has scrolled on still sees why it failed.
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
-  // Identifies the latest generate run. Only the run whose generation still
-  // matches may clear `busy` on settle — otherwise a stale run's `finally`
-  // would either wedge the section on the loading state or clobber a newer
-  // run's `busy` flag.
   const runRef = useRef(0);
   const rootRef = useRef<HTMLElement>(null);
+
+  const body = article.extractedHtml || article.contentHtml || "";
+  const cjkLen = (bodyPlainText(body).match(/[\u4e00-\u9fff]/g) || []).length;
+  if (cjkLen > 0 && cjkLen < 100) return null;
 
   const generate = useCallback(() => {
     if (busy) return;

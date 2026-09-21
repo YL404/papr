@@ -12,7 +12,8 @@ export type IconName =
   | "chevron-right" | "globe" | "focus" | "arrow-down" | "arrow-up"
   | "eye" | "eye-off" | "trash" | "mute" | "pin" | "x" | "command"
   | "copy" | "list" | "grid" | "text" | "alert" | "papr"
-  | "play" | "pause" | "skip-back" | "skip-fwd" | "headphones";
+  | "play" | "pause" | "skip-back" | "skip-fwd" | "headphones"
+  | "wide";
 
 interface Props {
   name: IconName;
@@ -111,6 +112,8 @@ export default function Icon({
       return <svg {...p}><path d="M12 5v14M19 12l-7 7-7-7" /></svg>;
     case "arrow-up":
       return <svg {...p}><path d="M12 19V5M5 12l7-7 7 7" /></svg>;
+    case "wide":
+      return <svg {...p}><path d="M8 7 4 12 8 17M16 7 20 12 16 17" /></svg>;
     case "eye":
       return <svg {...p}><path d="M2.5 12a10 10 0 0 1 19 0 10 10 0 0 1-19 0z" /><circle cx="12" cy="12" r="3" /></svg>;
     case "eye-off":

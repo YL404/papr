@@ -644,7 +644,7 @@ export default function ArticleList({ onToast }: Props) {
                       {feed && feed.sourceType !== "rss" && (
                         <span className="src-badge">{feed.sourceType}</span>
                       )}
-                      <span className="art-sep">·</span>
+                      <span className="art-spacer" />
                       <span className="art-time">{relTime(a.publishedAt)}</span>
                       {(rt.isTranslating || rt.error) && (
                         <span
