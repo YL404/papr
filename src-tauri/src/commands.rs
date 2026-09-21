@@ -6,7 +6,6 @@ use crate::db::{self};
 use crate::error::{AppError, AppResult};
 use crate::extraction;
 use crate::ingestion::discovery::{self, DiscoveryResult};
-use crate::ingestion::newsletter::{self, NewsletterConfig};
 use crate::ingestion::sources::{self, Normalized};
 use crate::ingestion::{fetch, parse};
 use crate::models::*;
@@ -16,7 +15,7 @@ use crate::sanitize;
 use crate::state::AppState;
 use crate::summary;
 use crate::translate;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
 use url::Url;
 
@@ -1295,165 +1294,6 @@ pub async fn preview_rule(
     let conn = state.read().await;
     let (count, samples) = db::preview_rule(&conn, feed_id, &field, query.trim())?;
     Ok(RulePreview { count, samples })
-}
-
-// ─────────────────────────── newsletter sources ───────────────────────────
-
-/// A configured email-newsletter source, as shown in the UI (no password).
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewsletterSource {
-    feed_id: i64,
-    title: String,
-    host: String,
-    port: u16,
-    username: String,
-    folder: String,
-}
-
-/// Payload for `add_newsletter_source` — the IMAP mailbox to start polling.
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NewsletterInput {
-    /// A display name for the source (falls back to the username).
-    pub title: Option<String>,
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    /// IMAP app-password / token. Stored in the local DB only.
-    pub password: String,
-    /// Mailbox to poll, e.g. `INBOX` or `Newsletters`.
-    pub folder: String,
-}
-
-/// Add an email-newsletter source. Verifies the IMAP credentials by polling
-/// the mailbox once, ingests whatever it finds, and persists the source so the
-/// background scheduler keeps polling it. Backed by a `feeds` row plus an
-/// entry in `newsletter_sources` (see migration #10).
-#[tauri::command]
-pub async fn add_newsletter_source(
-    state: State<'_, AppState>,
-    input: NewsletterInput,
-) -> AppResult<Feed> {
-    let cfg = NewsletterConfig {
-        host: input.host.trim().to_string(),
-        port: input.port,
-        username: input.username.trim().to_string(),
-        password: input.password.clone(),
-        folder: {
-            let f = input.folder.trim();
-            if f.is_empty() { "INBOX".to_string() } else { f.to_string() }
-        },
-    };
-    if cfg.host.is_empty() || cfg.username.is_empty() || cfg.password.is_empty() {
-        return Err(AppError::code("newsletterMissingFields"));
-    }
-    let feed_url = newsletter::synthetic_feed_url(&cfg);
-    let title = input
-        .title
-        .as_deref()
-        .map(str::trim)
-        .filter(|t| !t.is_empty())
-        .map(String::from)
-        .unwrap_or_else(|| cfg.username.clone());
-
-    // Reject a duplicate mailbox before doing the (slow) IMAP round-trip.
-    {
-        let conn = state.read().await;
-        if db::find_feed_by_url(&conn, &feed_url)?.is_some() {
-            return Err(AppError::code("alreadySubscribed"));
-        }
-    }
-
-    // Verify the credentials by actually connecting. The `imap` crate is
-    // blocking, so the connection runs on the blocking pool — and it has no
-    // per-operation timeout, so a server that completes the TCP/TLS handshake
-    // but then stalls mid-command would block this command forever (the Add
-    // dialog spinner never resolves, the blocking worker thread is leaked).
-    // Bound the whole probe with the same wall-clock cap the scheduler's
-    // background poll uses, so a wedged mailbox degrades to a clean error.
-    let probe_cfg = cfg.clone();
-    let messages = match tokio::time::timeout(
-        std::time::Duration::from_secs(scheduler::NEWSLETTER_POLL_TIMEOUT_SECS),
-        tokio::task::spawn_blocking(move || newsletter::fetch_recent(&probe_cfg, 30)),
-    )
-    .await
-    {
-        Ok(joined) => joined
-            .map_err(|e| AppError::other(format!("newsletter poll task: {e}")))??,
-        Err(_) => return Err(AppError::code("newsletterPollTimeout")),
-    };
-
-    // Persist the source, then ingest the messages just fetched.
-    let conn = state.db.lock().await;
-    let feed_id = db::insert_newsletter_source(&conn, &feed_url, &title, &cfg)?;
-    let rules = db::active_rules(&conn).unwrap_or_default();
-    // `upsert_article` returns `true` only for genuinely new *unread* rows, so
-    // articles a `read` rule pre-marked read are correctly excluded from the
-    // returned `unread_count` (matching the sidebar's `list_feeds` count).
-    let mut unread = 0i64;
-    for raw in &messages {
-        if let Some(parsed) = newsletter::email_to_article(raw) {
-            if db::upsert_article(&conn, feed_id, &parsed.article, false, &rules)? {
-                unread += 1;
-            }
-        }
-    }
-    // Record that the mailbox was just polled. The IMAP fetch above is a
-    // genuine, successful refresh of this source — without this the feed's
-    // `last_fetched_at` stays NULL and the sidebar reads it as "never
-    // refreshed" until the next scheduler tick (up to the refresh interval
-    // away). Mirrors `touch_feed` in `scheduler::poll_newsletters` for the
-    // background poll, and the same handling `add_feed` applies.
-    let _ = db::touch_feed(&conn, feed_id);
-    let last_fetched_at = db::feed_last_fetched(&conn, feed_id).ok().flatten();
-    drop(conn);
-
-    Ok(Feed {
-        id: feed_id,
-        feed_url,
-        site_url: None,
-        title,
-        description: None,
-        favicon_url: None,
-        folder_id: None,
-        source_type: SourceType::Newsletter.as_str().to_string(),
-        last_fetched_at,
-        fetch_error: None,
-        unread_count: unread,
-        refresh_interval_min: None,
-        auto_translate: false,
-        open_mode: None,
-    })
-}
-
-/// Every configured newsletter source (passwords omitted).
-#[tauri::command]
-pub async fn list_newsletter_sources(
-    state: State<'_, AppState>,
-) -> AppResult<Vec<NewsletterSource>> {
-    let conn = state.read().await;
-    Ok(db::list_newsletter_sources(&conn)?
-        .into_iter()
-        .map(|r| NewsletterSource {
-            feed_id: r.feed_id,
-            title: r.title,
-            host: r.host,
-            port: r.port,
-            username: r.username,
-            folder: r.folder,
-        })
-        .collect())
-}
-
-/// Remove a newsletter source and all of its ingested articles.
-#[tauri::command]
-pub async fn remove_newsletter_source(
-    state: State<'_, AppState>,
-    feed_id: i64,
-) -> AppResult<()> {
-    let conn = state.db.lock().await;
-    db::delete_newsletter_source(&conn, feed_id)
 }
 
 // ─────────────────────────── highlights (F7) ───────────────────────────

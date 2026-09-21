@@ -101,7 +101,7 @@ enum Cmd {
         #[arg(long, value_name = "ID")]
         folder: Option<i64>,
     },
-    /// Fetch new articles over the network (RSS feeds and newsletter mailboxes).
+    /// Fetch new articles over the network.
     Refresh {
         /// Only refresh this feed id (default: all feeds).
         #[arg(long, value_name = "ID")]
@@ -160,13 +160,6 @@ enum Cmd {
     Highlight {
         #[command(subcommand)]
         cmd: HighlightCmd,
-    },
-    /// List configured email-newsletter sources.
-    Newsletters,
-    /// Manage newsletter sources (add / remove).
-    Newsletter {
-        #[command(subcommand)]
-        cmd: NewsletterCmd,
     },
     /// Import or export feeds as OPML.
     Opml {
@@ -325,31 +318,6 @@ enum HighlightCmd {
     },
 }
 
-#[derive(Subcommand)]
-enum NewsletterCmd {
-    /// Add a newsletter source polled over IMAP.
-    Add {
-        #[arg(long)]
-        title: String,
-        #[arg(long)]
-        host: String,
-        #[arg(long, default_value_t = 993)]
-        port: u16,
-        #[arg(long)]
-        user: String,
-        #[arg(long)]
-        password: String,
-        #[arg(long, default_value = "INBOX")]
-        folder: String,
-    },
-    /// Remove a newsletter source (deletes the feed and its articles).
-    Remove {
-        #[arg(value_name = "FEED_ID")]
-        feed_id: i64,
-        #[arg(long)]
-        yes: bool,
-    },
-}
 
 #[derive(Subcommand)]
 enum OpmlCmd {
@@ -477,8 +445,6 @@ async fn run(cli: Cli) -> Result<String, AxiError> {
         Some(Cmd::Rule { cmd }) => cmd_rule(&path, cmd),
         Some(Cmd::Highlights { article }) => cmd_highlights(&path, article),
         Some(Cmd::Highlight { cmd }) => cmd_highlight(&path, cmd),
-        Some(Cmd::Newsletters) => cmd_newsletters(&path),
-        Some(Cmd::Newsletter { cmd }) => cmd_newsletter(&path, cmd),
         Some(Cmd::Opml { cmd }) => cmd_opml(&path, cmd),
         Some(Cmd::Settings { cmd }) => cmd_settings(&path, cmd),
         Some(Cmd::Stats) => cmd_stats(&path),
@@ -1263,64 +1229,6 @@ fn cmd_highlight(path: &Path, cmd: HighlightCmd) -> Result<String, AxiError> {
             require_yes(yes, "highlight delete", &format!("papr highlight delete {id}"))?;
             db::delete_highlight(&conn, id).map_err(db_err)?;
             ok_line(format!("highlight: #{id} deleted"))
-        }
-    }
-}
-
-// ──────────────────────────── newsletters ────────────────────────────
-
-fn cmd_newsletters(path: &Path) -> Result<String, AxiError> {
-    let conn = open_ro(path)?;
-    let rows = db::list_newsletter_sources(&conn).map_err(db_err)?;
-    let table: Vec<Value> = rows
-        .iter()
-        .map(|n| {
-            json!({
-                "feed": n.feed_id,
-                "title": cap(&n.title, 32),
-                "host": format!("{}:{}", n.host, n.port),
-                "user": n.username,
-                "folder": n.folder,
-            })
-        })
-        .collect();
-    let mut d = Doc::new();
-    d.set("newsletters", Value::Array(table));
-    if rows.is_empty() {
-        d.help(vec![
-            "Run `papr newsletter add --title .. --host .. --user .. --password ..` to add one".into(),
-        ]);
-    }
-    Ok(d.into_toon())
-}
-
-fn cmd_newsletter(path: &Path, cmd: NewsletterCmd) -> Result<String, AxiError> {
-    let conn = open_rw(path)?;
-    match cmd {
-        NewsletterCmd::Add { title, host, port, user, password, folder } => {
-            let cfg = papr_core::ingestion::newsletter::NewsletterConfig {
-                host: host.clone(),
-                port,
-                username: user.clone(),
-                password,
-                folder: folder.clone(),
-            };
-            // Synthetic, stable feed URL so the source de-dupes like an RSS feed.
-            let feed_url = format!("newsletter://{user}@{host}/{folder}");
-            if let Some(existing) = db::find_feed_by_url(&conn, &feed_url).map_err(db_err)? {
-                return ok_line(format!("newsletter: #{existing} already configured (no-op)"));
-            }
-            let id = db::insert_newsletter_source(&conn, &feed_url, &title, &cfg).map_err(db_err)?;
-            let mut d = Doc::new();
-            d.set("newsletter", json!({ "feed": id, "title": title, "host": format!("{host}:{port}") }));
-            d.help(vec![format!("Run `papr refresh --feed {id}` to poll it now")]);
-            Ok(d.into_toon())
-        }
-        NewsletterCmd::Remove { feed_id, yes } => {
-            require_yes(yes, "newsletter remove", &format!("papr newsletter remove {feed_id}"))?;
-            db::delete_newsletter_source(&conn, feed_id).map_err(db_err)?;
-            db::delete_feed(&conn, feed_id).map_err(db_err)?;
-            ok_line(format!("newsletter: #{feed_id} removed"))
         }
     }
 }

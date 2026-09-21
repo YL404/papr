@@ -9,26 +9,6 @@ export type SourceType =
   | "reddit"
   | "newsletter";
 
-/** A configured email-newsletter source (mirrors commands::NewsletterSource). */
-export interface NewsletterSource {
-  feedId: number;
-  title: string;
-  host: string;
-  port: number;
-  username: string;
-  folder: string;
-}
-
-/** Payload for add_newsletter_source (mirrors commands::NewsletterInput). */
-export interface NewsletterInput {
-  title: string | null;
-  host: string;
-  port: number;
-  username: string;
-  password: string;
-  folder: string;
-}
-
 /** A feed-discovery result (mirrors discovery::DiscoveryResult). */
 export interface DiscoveryResult {
   title: string;

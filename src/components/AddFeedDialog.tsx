@@ -14,40 +14,19 @@ interface Props {
   onToast: (msg: string) => void;
 }
 
-/** Which kind of source the dialog is currently configuring. */
-type Tab = "feed" | "newsletter";
-
-/** The IMAP port `add_newsletter_source` falls back to (implicit-TLS IMAP). */
-const DEFAULT_IMAP_PORT = 993;
-
-/**
- * Coerce the free-text port field into a valid TCP port. The backend command
- * argument is typed `u16`, so a value the user typed that is out of the
- * 1–65535 range (an extra digit) or non-integer (`993.5`) would otherwise fail
- * Tauri's argument deserialization with a cryptic, non-localised error before
- * `add_newsletter_source` even runs. Anything invalid falls back to 993.
- */
-function parsePort(raw: string): number {
-  const n = Number(raw.trim());
-  if (!Number.isInteger(n) || n < 1 || n > 65535) return DEFAULT_IMAP_PORT;
-  return n;
-}
-
-/** Subscribe to a new source — feed URL or an IMAP newsletter mailbox. */
+/** Subscribe to a new feed by URL. */
 export default function AddFeedDialog({ onClose, onToast }: Props) {
   const { t, i18n } = useTranslation();
   const actions = useArticleActions();
   const dialogRef = useRef<HTMLDivElement>(null);
   useFocusTrap(dialogRef);
-  const [tab, setTab] = useState<Tab>("feed");
 
-  // ── feed tab state ──
   const [url, setUrl] = useState("");
   const [folderId, setFolderId] = useState<number | null>(null);
   const folders = useQuery({ queryKey: ["folders"], queryFn: api.listFolders });
 
-  // ── discovery (feature F6): debounced search of the curated directory
-  // plus a live page scrape when the query looks like a URL. ──
+  // ── discovery: debounced search of the curated directory plus a live page
+  // scrape when the query looks like a URL. ──
   const [debounced, setDebounced] = useState("");
   useEffect(() => {
     const handle = window.setTimeout(() => setDebounced(url.trim()), 280);
@@ -58,7 +37,7 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
     queryKey: ["discover", debounced, i18n.language],
     queryFn: () => api.searchFeedDirectory(debounced, i18n.language),
     // Only search once there's a meaningful query; the scrape can be slow.
-    enabled: tab === "feed" && debounced.length >= 2,
+    enabled: debounced.length >= 2,
     staleTime: 60_000,
   });
 
@@ -80,14 +59,6 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
     return { scraped, byCategory };
   }, [discovery.data]);
 
-  // ── newsletter tab state ──
-  const [nlTitle, setNlTitle] = useState("");
-  const [nlHost, setNlHost] = useState("");
-  const [nlPort, setNlPort] = useState("993");
-  const [nlUser, setNlUser] = useState("");
-  const [nlPass, setNlPass] = useState("");
-  const [nlFolder, setNlFolder] = useState("INBOX");
-
   const add = useMutation({
     mutationFn: (target: string) => api.addFeed(target, folderId),
     onSuccess: (feed) => {
@@ -99,41 +70,8 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
     },
   });
 
-  const addNewsletter = useMutation({
-    mutationFn: () =>
-      api.addNewsletterSource({
-        title: nlTitle.trim() || null,
-        host: nlHost.trim(),
-        port: parsePort(nlPort),
-        username: nlUser.trim(),
-        password: nlPass,
-        folder: nlFolder.trim() || "INBOX",
-      }),
-    onSuccess: (feed) => {
-      actions.refreshAfterBulk();
-      onToast(t("addFeed.subscribed", { title: feed.title }));
-      onClose();
-    },
-  });
-
   const submit = () => {
-    if (tab === "feed") {
-      if (url.trim() && !add.isPending) add.mutate(url.trim());
-    } else {
-      if (nlHost.trim() && nlUser.trim() && nlPass && !addNewsletter.isPending)
-        addNewsletter.mutate();
-    }
-  };
-
-  // Enter submits the newsletter form from any of its fields — matching the
-  // feed tab, where Enter in the URL input subscribes. Previously only the
-  // password field carried a submit handler, so a keyboard user filling the
-  // form top-to-bottom (host → username → …) found Enter dead everywhere
-  // except the last field. The `isComposing` guard skips the Enter that only
-  // confirms an IME candidate (CJK input in the title/host/folder fields), the
-  // same guard the feed URL input uses.
-  const nlKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+    if (url.trim() && !add.isPending) add.mutate(url.trim());
   };
 
   /** Subscribe directly from a discovery result row. */
@@ -153,10 +91,7 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
     return () => window.removeEventListener("keydown", onKey, true);
   }, [onClose]);
 
-  const newsletterReady =
-    nlHost.trim() !== "" && nlUser.trim() !== "" && nlPass !== "";
-
-  const showDiscovery = tab === "feed" && debounced.length >= 2;
+  const showDiscovery = debounced.length >= 2;
   const hasResults =
     grouped.scraped.length > 0 || grouped.byCategory.size > 0;
 
@@ -172,219 +107,108 @@ export default function AddFeedDialog({ onClose, onToast }: Props) {
       >
         <h2 id="addfeed-dialog-title">{t("addFeed.title")}</h2>
 
-        {/* Source-type tabs: a plain feed/site URL, or an IMAP mailbox. */}
-        <div className="seg" role="tablist" style={{ marginBottom: 4 }}>
-          <button
-            role="tab"
-            aria-selected={tab === "feed"}
-            className={`seg-btn${tab === "feed" ? " active" : ""}`}
-            onClick={() => setTab("feed")}
-          >
-            {t("addFeed.tabFeed")}
-          </button>
-          <button
-            role="tab"
-            aria-selected={tab === "newsletter"}
-            className={`seg-btn${tab === "newsletter" ? " active" : ""}`}
-            onClick={() => setTab("newsletter")}
-          >
-            {t("addFeed.tabNewsletter")}
-          </button>
-        </div>
+        <p className="modal-hint">{t("addFeed.hint")}</p>
+        <input
+          className="modal-input"
+          type="text"
+          autoFocus
+          placeholder={t("addFeed.discoverPlaceholder")}
+          aria-label={t("addFeed.urlLabel")}
+          {...NO_AUTOCORRECT}
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => {
+            // Ignore the Enter that only confirms an IME candidate.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+          }}
+        />
 
-        {tab === "feed" ? (
-          <>
-            <p className="modal-hint">{t("addFeed.hint")}</p>
-            <input
-              className="modal-input"
-              type="text"
-              autoFocus
-              placeholder={t("addFeed.discoverPlaceholder")}
-              aria-label={t("addFeed.urlLabel")}
-              {...NO_AUTOCORRECT}
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-              onKeyDown={(e) => {
-                // Ignore the Enter that only confirms an IME candidate.
-                if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
-              }}
-            />
-
-            {/* Discovery results — curated directory + live page scrape. */}
-            {showDiscovery && (
-              <div className="discover-results" role="listbox">
-                {discovery.isLoading && (
-                  <div className="discover-empty">
-                    {t("addFeed.discoverSearching")}
-                  </div>
-                )}
-                {/* A failed search must not masquerade as "no feeds found". */}
-                {!discovery.isLoading && discovery.isError && (
-                  <div className="discover-empty">
-                    {t("addFeed.discoverError")}
-                  </div>
-                )}
-                {!discovery.isLoading && !discovery.isError && !hasResults && (
-                  <div className="discover-empty">
-                    {t("addFeed.discoverNoResults")}
-                  </div>
-                )}
-                {grouped.scraped.length > 0 && (
-                  <div className="discover-group">
-                    <div className="discover-group-label">
-                      {t("addFeed.discoverFromPage")}
-                    </div>
-                    {grouped.scraped.map((r) => (
-                      <DiscoverRow
-                        key={r.feedUrl}
-                        result={r}
-                        disabled={add.isPending}
-                        onSubscribe={() => subscribeResult(r)}
-                        addLabel={t("addFeed.discoverAdd")}
-                      />
-                    ))}
-                  </div>
-                )}
-                {[...grouped.byCategory.entries()].map(([cat, rows]) => (
-                  <div className="discover-group" key={cat}>
-                    <div className="discover-group-label">{cat}</div>
-                    {rows.map((r) => (
-                      <DiscoverRow
-                        key={r.feedUrl}
-                        result={r}
-                        disabled={add.isPending}
-                        onSubscribe={() => subscribeResult(r)}
-                        addLabel={t("addFeed.discoverAdd")}
-                      />
-                    ))}
-                  </div>
+        {/* Discovery results — curated directory + live page scrape. */}
+        {showDiscovery && (
+          <div className="discover-results" role="listbox">
+            {discovery.isLoading && (
+              <div className="discover-empty">
+                {t("addFeed.discoverSearching")}
+              </div>
+            )}
+            {/* A failed search must not masquerade as "no feeds found". */}
+            {!discovery.isLoading && discovery.isError && (
+              <div className="discover-empty">
+                {t("addFeed.discoverError")}
+              </div>
+            )}
+            {!discovery.isLoading && !discovery.isError && !hasResults && (
+              <div className="discover-empty">
+                {t("addFeed.discoverNoResults")}
+              </div>
+            )}
+            {grouped.scraped.length > 0 && (
+              <div className="discover-group">
+                <div className="discover-group-label">
+                  {t("addFeed.discoverFromPage")}
+                </div>
+                {grouped.scraped.map((r) => (
+                  <DiscoverRow
+                    key={r.feedUrl}
+                    result={r}
+                    disabled={add.isPending}
+                    onSubscribe={() => subscribeResult(r)}
+                    addLabel={t("addFeed.discoverAdd")}
+                  />
                 ))}
               </div>
             )}
-
-            {(folders.data?.length ?? 0) > 0 && (
-              <select
-                className="s-select"
-                style={{ width: "100%" }}
-                aria-label={t("addFeed.folderLabel")}
-                value={folderId ?? ""}
-                onChange={(e) =>
-                  setFolderId(e.target.value ? Number(e.target.value) : null)
-                }
-              >
-                <option value="">{t("addFeed.noFolder")}</option>
-                {folders.data!.map((f) => (
-                  <option key={f.id} value={f.id}>
-                    {f.name}
-                  </option>
+            {[...grouped.byCategory.entries()].map(([cat, rows]) => (
+              <div className="discover-group" key={cat}>
+                <div className="discover-group-label">{cat}</div>
+                {rows.map((r) => (
+                  <DiscoverRow
+                    key={r.feedUrl}
+                    result={r}
+                    disabled={add.isPending}
+                    onSubscribe={() => subscribeResult(r)}
+                    addLabel={t("addFeed.discoverAdd")}
+                  />
                 ))}
-              </select>
-            )}
-            {add.isError && (
-              <div className="modal-error">{errorText(add.error)}</div>
-            )}
-          </>
-        ) : (
-          <>
-            <p className="modal-hint">{t("addFeed.newsletterHint")}</p>
-            <input
-              className="modal-input"
-              type="text"
-              autoFocus
-              placeholder={t("addFeed.nlTitlePlaceholder")}
-              aria-label={t("addFeed.nlTitleLabel")}
-              {...NO_AUTOCORRECT}
-              value={nlTitle}
-              onChange={(e) => setNlTitle(e.target.value)}
-              onKeyDown={nlKeyDown}
-            />
-            <div style={{ display: "flex", gap: 8 }}>
-              <input
-                className="modal-input"
-                type="text"
-                style={{ flex: 2 }}
-                placeholder={t("addFeed.nlHostPlaceholder")}
-                aria-label={t("addFeed.nlHostLabel")}
-                {...NO_AUTOCORRECT}
-                value={nlHost}
-                onChange={(e) => setNlHost(e.target.value)}
-                onKeyDown={nlKeyDown}
-              />
-              <input
-                className="modal-input"
-                type="text"
-                style={{ flex: 1 }}
-                placeholder="993"
-                aria-label={t("addFeed.nlPortLabel")}
-                {...NO_AUTOCORRECT}
-                value={nlPort}
-                onChange={(e) => setNlPort(e.target.value)}
-                onKeyDown={nlKeyDown}
-              />
-            </div>
-            <input
-              className="modal-input"
-              type="text"
-              placeholder={t("addFeed.nlUserPlaceholder")}
-              aria-label={t("addFeed.nlUserLabel")}
-              {...NO_AUTOCORRECT}
-              value={nlUser}
-              onChange={(e) => setNlUser(e.target.value)}
-              onKeyDown={nlKeyDown}
-            />
-            <input
-              className="modal-input"
-              type="password"
-              placeholder={t("addFeed.nlPassPlaceholder")}
-              aria-label={t("addFeed.nlPassLabel")}
-              {...NO_AUTOCORRECT}
-              value={nlPass}
-              onChange={(e) => setNlPass(e.target.value)}
-              onKeyDown={nlKeyDown}
-            />
-            <input
-              className="modal-input"
-              type="text"
-              placeholder="INBOX"
-              aria-label={t("addFeed.nlFolderLabel")}
-              {...NO_AUTOCORRECT}
-              value={nlFolder}
-              onChange={(e) => setNlFolder(e.target.value)}
-              onKeyDown={nlKeyDown}
-            />
-            {addNewsletter.isError && (
-              <div className="modal-error">
-                {errorText(addNewsletter.error)}
               </div>
-            )}
-          </>
+            ))}
+          </div>
+        )}
+
+        {(folders.data?.length ?? 0) > 0 && (
+          <select
+            className="s-select"
+            style={{ width: "100%" }}
+            aria-label={t("addFeed.folderLabel")}
+            value={folderId ?? ""}
+            onChange={(e) =>
+              setFolderId(e.target.value ? Number(e.target.value) : null)
+            }
+          >
+            <option value="">{t("addFeed.noFolder")}</option>
+            {folders.data!.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name}
+              </option>
+            ))}
+          </select>
+        )}
+        {add.isError && (
+          <div className="modal-error">{errorText(add.error)}</div>
         )}
 
         <div className="modal-actions">
           <button className="s-btn" onClick={onClose}>
             {t("common.cancel")}
           </button>
-          {tab === "feed" ? (
-            <button
-              className="s-btn primary"
-              onClick={submit}
-              disabled={!url.trim() || add.isPending}
-            >
-              <Icon name="plus" size={12} />
-              {add.isPending ? t("addFeed.adding") : t("addFeed.subscribe")}
-            </button>
-          ) : (
-            <button
-              className="s-btn primary"
-              onClick={submit}
-              disabled={!newsletterReady || addNewsletter.isPending}
-            >
-              <Icon name="plus" size={12} />
-              {addNewsletter.isPending
-                ? t("addFeed.connecting")
-                : t("addFeed.connect")}
-            </button>
-          )}
+          <button
+            className="s-btn primary"
+            onClick={submit}
+            disabled={!url.trim() || add.isPending}
+          >
+            <Icon name="plus" size={12} />
+            {add.isPending ? t("addFeed.adding") : t("addFeed.subscribe")}
+          </button>
         </div>
       </div>
     </div>

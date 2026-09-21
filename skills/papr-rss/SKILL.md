@@ -40,7 +40,7 @@ papr search "<query>"       # FTS5 full-text search across every article
 papr mark read <id> [<id>...]      # state: read|unread|star|unstar|later|unlater (idempotent)
 papr mark-all --feed <id>          # mark a whole view read
 papr subscribe <url>               # auto-discovers the feed, inserts it, fetches it
-papr refresh [--feed <id>]         # fetch new articles over the network (RSS + newsletters)
+papr refresh [--feed <id>]         # fetch new articles over the network
 papr extract <id>                  # fetch & store the cleaned full text of an article
 ```
 
@@ -51,7 +51,6 @@ papr tags | papr tag add <tag_id> <article_id> | papr tag create "<name>"
 papr folders | papr folder create "<name>" | papr feed move <id> --folder <id>
 papr rules | papr rule create "<name>" "<keywords>" --action star
 papr highlights [--article <id>] | papr highlight create <article_id> "<quote>"
-papr newsletters | papr newsletter add --title .. --host .. --user .. --password ..
 papr opml import <file> | papr opml export
 papr settings get <key> | papr settings set <key> <value>
 papr stats
@@ -68,7 +67,7 @@ the exact command to re-run:
 ```sh
 papr unsubscribe <id> --yes            # delete a feed and its articles
 papr admin cleanup <days> --yes        # also: admin vacuum / admin reset
-papr folder delete <id> --yes          # likewise tag/rule/highlight delete, newsletter remove
+papr folder delete <id> --yes          # likewise tag/rule/highlight delete
 ```
 
 ## Notes

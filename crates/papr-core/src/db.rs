@@ -557,9 +557,9 @@ pub fn list_feeds(conn: &Connection) -> AppResult<Vec<Feed>> {
 /// the last two are the stored revalidators for a conditional GET.
 pub type FeedToRefresh = (i64, String, Option<String>, Option<String>);
 
-/// All feeds that need an HTTP fetch. Newsletter sources are excluded — they
-/// are polled over IMAP separately (see `scheduler::poll_newsletters`); their
-/// synthetic `imap://` feed_url is not an HTTP-fetchable document.
+/// All feeds that need an HTTP fetch. Sources with a synthetic non-HTTP
+/// `feed_url` (left behind by the retired newsletter feature) are excluded —
+/// their URL is not a fetchable document.
 pub fn feeds_to_refresh(conn: &Connection) -> AppResult<Vec<FeedToRefresh>> {
     let mut stmt = conn.prepare(
         "SELECT id, feed_url, etag, last_modified FROM feeds
@@ -576,7 +576,7 @@ pub fn feeds_to_refresh(conn: &Connection) -> AppResult<Vec<FeedToRefresh>> {
 /// per-feed interval can carry it to opt one feed out of automatic refresh.
 pub const REFRESH_OFF_MINUTES: i64 = 525_600;
 
-/// Non-newsletter feeds that are *due* for a fetch: their effective interval —
+/// Feeds that are *due* for a fetch: their effective interval —
 /// the per-feed `refresh_interval_min`, or `global_min` when unset — has
 /// elapsed since `last_fetched_at` (a never-fetched feed is always due). Feeds
 /// whose effective interval is the "off" sentinel are excluded entirely. Used
@@ -602,9 +602,8 @@ pub fn feeds_due_for_refresh(
     Ok(rows)
 }
 
-/// Non-newsletter feeds for a single feed id — the per-feed manual refresh.
-/// An empty result means the id is unknown or names a newsletter source (which
-/// is polled over IMAP, not fetched here).
+/// Feeds for a single feed id — the per-feed manual refresh. An empty result
+/// means the id is unknown or names a source with no HTTP document to fetch.
 pub fn feeds_to_refresh_for_feed(conn: &Connection, feed_id: i64) -> AppResult<Vec<FeedToRefresh>> {
     let mut stmt = conn.prepare(
         "SELECT id, feed_url, etag, last_modified FROM feeds
@@ -618,7 +617,7 @@ pub fn feeds_to_refresh_for_feed(conn: &Connection, feed_id: i64) -> AppResult<V
     Ok(rows)
 }
 
-/// Non-newsletter feeds in a folder — the per-folder manual refresh.
+/// Feeds in a folder — the per-folder manual refresh.
 pub fn feeds_to_refresh_in_folder(
     conn: &Connection,
     folder_id: i64,
@@ -753,12 +752,11 @@ pub fn delete_feed(conn: &Connection, id: i64) -> AppResult<()> {
     Ok(())
 }
 
-/// Feeds for OPML export as `(title, feed_url, folder)` tuples. Newsletter
-/// sources are excluded: OPML is an RSS-subscription interchange format, and a
-/// newsletter's `feed_url` is a synthetic `imap://user@host:port/folder`
-/// string — exporting it would emit an `<outline xmlUrl="imap://…">` that any
-/// reader (Papr's own `import_opml` included) would treat as an RSS feed and
-/// then fail to HTTP-fetch forever, with the IMAP credentials not even carried.
+/// Feeds for OPML export as `(title, feed_url, folder)` tuples. Sources with a
+/// synthetic non-HTTP `feed_url` are excluded: OPML is an RSS-subscription
+/// interchange format, and exporting such a URL would emit an `<outline
+/// xmlUrl="imap://…">` that any reader (Papr's own `import_opml` included)
+/// would treat as an RSS feed and then fail to HTTP-fetch forever.
 pub fn feeds_for_export(conn: &Connection) -> AppResult<Vec<(String, String, Option<String>)>> {
     let mut stmt = conn.prepare(
         "SELECT f.title, f.feed_url, fo.name
@@ -821,191 +819,6 @@ pub fn rename_feed(conn: &Connection, id: i64, title: &str) -> AppResult<()> {
     Ok(())
 }
 
-// ─────────────────────────── newsletter sources ───────────────────────────
-
-/// One configured email-newsletter source: the backing feed plus its IMAP
-/// connection details. Mirrors the `commands::NewsletterSource` payload.
-pub struct NewsletterSourceRow {
-    pub feed_id: i64,
-    pub title: String,
-    pub host: String,
-    pub port: u16,
-    pub username: String,
-    pub folder: String,
-}
-
-/// Insert a newsletter source: a `feeds` row (source_type = 'newsletter') plus
-/// its IMAP credentials in `newsletter_sources`. Both land in one transaction
-/// so a failure cannot leave a feed with no credentials. Returns the feed id.
-pub fn insert_newsletter_source(
-    conn: &Connection,
-    feed_url: &str,
-    title: &str,
-    cfg: &crate::ingestion::newsletter::NewsletterConfig,
-) -> AppResult<i64> {
-    let tx = conn.unchecked_transaction()?;
-    tx.execute(
-        "INSERT INTO feeds(feed_url, title, source_type) VALUES (?1, ?2, 'newsletter')",
-        params![feed_url, title],
-    )?;
-    let feed_id = tx.last_insert_rowid();
-    tx.execute(
-        "INSERT INTO newsletter_sources(feed_id, host, port, username, password, folder)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![feed_id, cfg.host, cfg.port, cfg.username, cfg.password, cfg.folder],
-    )?;
-    tx.commit()?;
-    Ok(feed_id)
-}
-
-/// Every configured newsletter source (without the password) for the UI list.
-pub fn list_newsletter_sources(conn: &Connection) -> AppResult<Vec<NewsletterSourceRow>> {
-    let mut stmt = conn.prepare(
-        "SELECT n.feed_id, f.title, n.host, n.port, n.username, n.folder
-         FROM newsletter_sources n JOIN feeds f ON f.id = n.feed_id
-         ORDER BY f.title COLLATE NOCASE",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok(NewsletterSourceRow {
-                feed_id: r.get(0)?,
-                title: r.get(1)?,
-                host: r.get(2)?,
-                port: r.get::<_, i64>(3)? as u16,
-                username: r.get(4)?,
-                folder: r.get(5)?,
-            })
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// `(feed_id, IMAP config)` for every newsletter source — the work list the
-/// refresh scheduler polls each cycle. Returning a `NewsletterConfig` directly
-/// spares the caller a field-by-field rebuild.
-pub fn newsletter_sources_to_poll(
-    conn: &Connection,
-) -> AppResult<Vec<(i64, crate::ingestion::newsletter::NewsletterConfig)>> {
-    use crate::ingestion::newsletter::NewsletterConfig;
-    let mut stmt = conn.prepare(
-        "SELECT feed_id, host, port, username, password, folder FROM newsletter_sources",
-    )?;
-    let rows = stmt
-        .query_map([], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                NewsletterConfig {
-                    host: r.get::<_, String>(1)?,
-                    port: r.get::<_, i64>(2)? as u16,
-                    username: r.get::<_, String>(3)?,
-                    password: r.get::<_, String>(4)?,
-                    folder: r.get::<_, String>(5)?,
-                },
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// `(feed_id, IMAP config)` for newsletter sources that are *due* to be polled,
-/// applying the same per-feed/global interval logic as `feeds_due_for_refresh`.
-/// Used by the background scheduler; the manual refresh polls every mailbox.
-pub fn newsletter_sources_due_to_poll(
-    conn: &Connection,
-    global_min: i64,
-) -> AppResult<Vec<(i64, crate::ingestion::newsletter::NewsletterConfig)>> {
-    use crate::ingestion::newsletter::NewsletterConfig;
-    let mut stmt = conn.prepare(
-        "SELECT s.feed_id, s.host, s.port, s.username, s.password, s.folder
-         FROM newsletter_sources s JOIN feeds f ON f.id = s.feed_id
-         WHERE COALESCE(f.refresh_interval_min, ?1) < ?2
-           AND ( f.last_fetched_at IS NULL
-                 OR (julianday('now') - julianday(f.last_fetched_at)) * 1440.0
-                    >= COALESCE(f.refresh_interval_min, ?1) )",
-    )?;
-    let rows = stmt
-        .query_map(params![global_min, REFRESH_OFF_MINUTES], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                NewsletterConfig {
-                    host: r.get::<_, String>(1)?,
-                    port: r.get::<_, i64>(2)? as u16,
-                    username: r.get::<_, String>(3)?,
-                    password: r.get::<_, String>(4)?,
-                    folder: r.get::<_, String>(5)?,
-                },
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// `(feed_id, IMAP config)` for a single newsletter source — the per-feed
-/// manual refresh. Empty when the feed id is not a newsletter source.
-pub fn newsletter_sources_for_feed(
-    conn: &Connection,
-    feed_id: i64,
-) -> AppResult<Vec<(i64, crate::ingestion::newsletter::NewsletterConfig)>> {
-    use crate::ingestion::newsletter::NewsletterConfig;
-    let mut stmt = conn.prepare(
-        "SELECT feed_id, host, port, username, password, folder
-         FROM newsletter_sources WHERE feed_id = ?1",
-    )?;
-    let rows = stmt
-        .query_map(params![feed_id], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                NewsletterConfig {
-                    host: r.get::<_, String>(1)?,
-                    port: r.get::<_, i64>(2)? as u16,
-                    username: r.get::<_, String>(3)?,
-                    password: r.get::<_, String>(4)?,
-                    folder: r.get::<_, String>(5)?,
-                },
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// `(feed_id, IMAP config)` for the newsletter sources in a folder — the
-/// per-folder manual refresh.
-pub fn newsletter_sources_in_folder(
-    conn: &Connection,
-    folder_id: i64,
-) -> AppResult<Vec<(i64, crate::ingestion::newsletter::NewsletterConfig)>> {
-    use crate::ingestion::newsletter::NewsletterConfig;
-    let mut stmt = conn.prepare(
-        "SELECT s.feed_id, s.host, s.port, s.username, s.password, s.folder
-         FROM newsletter_sources s JOIN feeds f ON f.id = s.feed_id
-         WHERE f.folder_id = ?1",
-    )?;
-    let rows = stmt
-        .query_map(params![folder_id], |r| {
-            Ok((
-                r.get::<_, i64>(0)?,
-                NewsletterConfig {
-                    host: r.get::<_, String>(1)?,
-                    port: r.get::<_, i64>(2)? as u16,
-                    username: r.get::<_, String>(3)?,
-                    password: r.get::<_, String>(4)?,
-                    folder: r.get::<_, String>(5)?,
-                },
-            ))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Remove a newsletter source. Deleting the `feeds` row cascades to both
-/// `newsletter_sources` and the source's articles.
-pub fn delete_newsletter_source(conn: &Connection, feed_id: i64) -> AppResult<()> {
-    conn.execute("DELETE FROM feeds WHERE id = ?1", params![feed_id])?;
-    Ok(())
-}
-
-// ─────────────────────────── articles ───────────────────────────
-
 /// A parsed article ready for insertion.
 pub struct NewArticle {
     pub guid: String,
@@ -1053,7 +866,7 @@ fn rule_matches(rule: &Rule, feed_id: i64, a: &NewArticle) -> bool {
 /// Insert an article if it is new (by feed_id + guid). Returns `true` only when
 /// a genuinely **new and unread** article was inserted — callers tally this as
 /// the count of fresh articles surfaced to the user (refresh toast, "new
-/// articles" notification, `add_newsletter_source`'s `unread_count`).
+/// articles" notification).
 ///
 /// An article inserted but pre-marked read by a `read` rule returns `false`:
 /// the row landed, but it never shows up as unread, so counting it would
@@ -2559,38 +2372,6 @@ mod tests {
         // `WHERE source_type = 'rss'` guard makes this strictly a promotion.
         refine_feed_source_type(&conn, feed_id, SourceType::Mastodon).unwrap();
         assert_eq!(kind(&conn), "podcast");
-    }
-
-    #[test]
-    fn opml_export_omits_newsletter_sources() {
-        use crate::ingestion::newsletter::NewsletterConfig;
-        let (conn, _) = test_db();
-        // The RSS feed from `test_db` plus a newsletter source whose feed_url
-        // is the synthetic, non-HTTP-fetchable `imap://` form.
-        let cfg = NewsletterConfig {
-            host: "imap.example.com".into(),
-            port: 993,
-            username: "me@example.com".into(),
-            password: "secret".into(),
-            folder: "Newsletters".into(),
-        };
-        insert_newsletter_source(
-            &conn,
-            "imap://me@example.com@imap.example.com:993/Newsletters",
-            "My Newsletter",
-            &cfg,
-        )
-        .unwrap();
-
-        let exported = feeds_for_export(&conn).unwrap();
-        // Only the real RSS feed is exportable — the newsletter is left out so
-        // a re-import never resurrects it as a broken `imap://` RSS feed.
-        assert_eq!(exported.len(), 1);
-        assert_eq!(exported[0].1, "https://example.com/feed.xml");
-        assert!(
-            !exported.iter().any(|(_, url, _)| url.starts_with("imap://")),
-            "no synthetic imap:// url should reach the OPML"
-        );
     }
 
     #[test]

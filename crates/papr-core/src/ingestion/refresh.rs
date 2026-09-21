@@ -1,34 +1,21 @@
 //! Headless feed refresh — the UI-free core of a refresh cycle.
 //!
 //! Selects the sources to touch, fetches them with bounded concurrency, ingests
-//! new articles, polls newsletter mailboxes over IMAP, and runs retention
-//! cleanup. Progress is reported through an `on_event` callback so callers can
-//! render it however they like.
+//! new articles, and runs retention cleanup. Progress is reported through an
+//! `on_event` callback so callers can render it however they like.
 //!
 //! The desktop app wraps [`refresh_core`] with a Tauri progress channel,
-//! notifications, FreshRSS sync and tray updates (see `papr_lib::scheduler`);
-//! the agent CLI drives it directly, forwarding events to stderr.
+//! notifications and tray updates (see `papr_lib::scheduler`); the agent CLI
+//! drives it directly, forwarding events to stderr.
 
 use crate::db;
 use crate::error::AppResult;
-use crate::ingestion::newsletter;
 use crate::ingestion::{fetch, parse};
 use crate::models::{RefreshProgress, SourceType};
 use rusqlite::Connection;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::sync::{Mutex, Semaphore};
 use tokio::task::JoinSet;
-
-/// Wall-clock cap for polling one newsletter mailbox over IMAP. Generous enough
-/// for a slow mailbox with large messages, short enough that a wedged server
-/// never stalls the refresh cycle. Shared with the interactive
-/// `add_newsletter_source` probe so a hung server can't hang the Add dialog.
-pub const NEWSLETTER_POLL_TIMEOUT_SECS: u64 = 90;
-
-/// Result of polling one newsletter mailbox: the feed id paired with either the
-/// raw RFC822 message bytes or an error string describing the failure.
-type MailboxPoll = (i64, Result<Vec<Vec<u8>>, String>);
 
 /// Outcome of a [`refresh_core`] run.
 #[derive(Clone, Copy, Debug)]
@@ -37,19 +24,19 @@ pub struct RefreshSummary {
     pub new_articles: usize,
     /// `false` only when a `Due`-scoped run found nothing due and skipped the
     /// pipeline entirely. Lets the desktop scheduler keep idle ticks genuinely
-    /// idle (no notifications / sync / tray refresh on an empty cycle).
+    /// idle (no notifications / tray refresh on an empty cycle).
     pub ran: bool,
 }
 
 /// Which feeds a refresh run should touch.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum RefreshScope {
-    /// Every feed and newsletter — the manual refresh and OPML import.
+    /// Every feed — the manual refresh and OPML import.
     All,
     /// Only sources whose per-feed (or global) interval has elapsed — the
     /// background scheduler. An empty due-set skips the whole pipeline.
     Due,
-    /// A single feed by id (and its newsletter mailbox, if any) — the per-feed
+    /// A single feed by id — the per-feed
     /// manual refresh (`refresh --feed <id>`). Always runs the pipeline.
     Feed(i64),
     /// Every feed in one folder by id — the per-folder manual refresh. Always
@@ -60,7 +47,7 @@ pub enum RefreshScope {
 /// Insert a batch of articles for one feed in bounded chunks, releasing the
 /// shared DB lock between each so concurrent queries aren't starved while a
 /// large feed (hundreds of items) is being ingested. Returns the count newly
-/// inserted; `label` only distinguishes the warning text (`rss`/`newsletter`).
+/// inserted; `label` only distinguishes the warning text.
 async fn upsert_articles(
     db: &Mutex<Connection>,
     feed_id: i64,
@@ -119,20 +106,20 @@ async fn fetch_one(
 }
 
 /// Refresh the sources selected by `scope`: fetch with bounded concurrency,
-/// ingest new articles, poll newsletters, and run retention cleanup. Reports
-/// progress through `on_event` and returns the new-article count.
+/// ingest new articles, and run retention cleanup. Reports progress through
+/// `on_event` and returns the new-article count.
 ///
 /// UI-free and side-effect-light: it performs no cross-process locking (callers
-/// serialize), no desktop notifications and no FreshRSS sync. `db` is the
-/// writer connection behind an async mutex; `client` is a shared HTTP client
-/// (cheap to clone per feed).
+/// serialize) and no desktop notifications. `db` is the writer connection
+/// behind an async mutex; `client` is a shared HTTP client (cheap to clone per
+/// feed).
 pub async fn refresh_core(
     db: &Mutex<Connection>,
     client: &reqwest::Client,
     scope: RefreshScope,
     mut on_event: impl FnMut(RefreshProgress),
 ) -> AppResult<RefreshSummary> {
-    let (feeds, newsletters, concurrency, dedup, rules) = {
+    let (feeds, concurrency, dedup, rules) = {
         let conn = db.lock().await;
         // The global default interval for feeds without a per-feed override.
         let global_min = db::get_setting(&conn, "refresh_interval_min")
@@ -142,38 +129,22 @@ pub async fn refresh_core(
             .filter(|m| *m >= 5)
             .map(|m| m.min(db::REFRESH_OFF_MINUTES))
             .unwrap_or(30);
-        let (feeds, newsletters) = match scope {
-            RefreshScope::All => (
-                db::feeds_to_refresh(&conn)?,
-                db::newsletter_sources_to_poll(&conn).unwrap_or_default(),
-            ),
-            RefreshScope::Due => (
-                db::feeds_due_for_refresh(&conn, global_min)?,
-                db::newsletter_sources_due_to_poll(&conn, global_min).unwrap_or_default(),
-            ),
-            // The HTTP fetch set excludes newsletter sources (`source_type !=
-            // 'newsletter'` in the query), so a newsletter feed's synthetic
-            // `newsletter://` URL is never handed to `fetch_one`; it is polled
-            // over IMAP via the separate newsletter set instead.
-            RefreshScope::Feed(id) => (
-                db::feeds_to_refresh_for_feed(&conn, id)?,
-                db::newsletter_sources_for_feed(&conn, id).unwrap_or_default(),
-            ),
-            RefreshScope::Folder(id) => (
-                db::feeds_to_refresh_in_folder(&conn, id)?,
-                db::newsletter_sources_in_folder(&conn, id).unwrap_or_default(),
-            ),
+        let feeds = match scope {
+            RefreshScope::All => db::feeds_to_refresh(&conn)?,
+            RefreshScope::Due => db::feeds_due_for_refresh(&conn, global_min)?,
+            RefreshScope::Feed(id) => db::feeds_to_refresh_for_feed(&conn, id)?,
+            RefreshScope::Folder(id) => db::feeds_to_refresh_in_folder(&conn, id)?,
         };
         let concurrency =
             db::setting_parsed::<i64>(&conn, "net_concurrency", 6).clamp(1, 16) as usize;
         let dedup = db::setting_flag(&conn, "dedup_enabled", false);
         let rules = db::active_rules(&conn).unwrap_or_default();
-        (feeds, newsletters, concurrency, dedup, rules)
+        (feeds, concurrency, dedup, rules)
     };
 
     // Nothing due this cycle: emit a no-op Started/Finished and bow out before
     // the heavier tail. The manual refresh (scope All) always runs the pipeline.
-    if scope == RefreshScope::Due && feeds.is_empty() && newsletters.is_empty() {
+    if scope == RefreshScope::Due && feeds.is_empty() {
         on_event(RefreshProgress::Started { total: 0 });
         on_event(RefreshProgress::Finished { new_articles: 0 });
         return Ok(RefreshSummary {
@@ -255,10 +226,6 @@ pub async fn refresh_core(
         });
     }
 
-    // Newsletter sources: poll each configured IMAP mailbox and ingest any new
-    // messages as articles, alongside the RSS refresh above.
-    total_new += poll_newsletters(db, newsletters, dedup, &rules).await;
-
     // Retention: drop old read articles when a finite window is configured. The
     // DELETE scans the whole table, so throttle it to once per day rather than
     // running on every refresh cycle.
@@ -289,89 +256,4 @@ pub async fn refresh_core(
         new_articles: total_new,
         ran: true,
     })
-}
-
-/// Poll every configured email-newsletter source over IMAP and ingest any new
-/// messages as articles. Runs as part of [`refresh_core`] so newsletters
-/// refresh on the same cadence as RSS feeds. Returns the new-article count.
-///
-/// A failure for one mailbox (bad credentials, server down) is recorded as the
-/// feed's `fetch_error` and does not abort the others.
-async fn poll_newsletters(
-    db: &Mutex<Connection>,
-    sources: Vec<(i64, newsletter::NewsletterConfig)>,
-    dedup: bool,
-    rules: &[crate::models::Rule],
-) -> usize {
-    if sources.is_empty() {
-        return 0;
-    }
-
-    // Poll the mailboxes concurrently — each IMAP fetch is slow and fully
-    // independent. Bounded by a semaphore so a user with many newsletters does
-    // not open dozens of TLS connections at once.
-    let sem = Arc::new(Semaphore::new(4));
-    let mut set: JoinSet<MailboxPoll> = JoinSet::new();
-    for (feed_id, cfg) in sources {
-        let sem = sem.clone();
-        set.spawn(async move {
-            let _permit = sem.acquire().await;
-            // `imap` is a blocking crate with no per-operation timeout: a server
-            // that completes the handshake but stalls mid-command would block
-            // forever. Bound the whole fetch with a wall-clock timeout so a hung
-            // mailbox degrades to a per-feed error instead of wedging the run.
-            //
-            // Caveat: `timeout` only abandons the `JoinHandle`; the
-            // `spawn_blocking` thread keeps running until its socket read
-            // unblocks. A truly cancellable poll needs a socket read-timeout,
-            // but the pinned `imap` alpha exposes no public accessor for the
-            // session's stream (its `SetReadTimeout` is crate-internal), so that
-            // would mean hand-rolling the rustls handshake. Tracked as a
-            // follow-up; acceptable here because a permanently-stalling mailbox
-            // is a rare, user-fixable misconfiguration.
-            let fetched = match tokio::time::timeout(
-                Duration::from_secs(NEWSLETTER_POLL_TIMEOUT_SECS),
-                tokio::task::spawn_blocking(move || newsletter::fetch_recent(&cfg, 50)),
-            )
-            .await
-            {
-                Ok(joined) => joined
-                    .map_err(|e| e.to_string())
-                    .and_then(|r| r.map_err(|e| e.to_string())),
-                Err(_) => Err(format!(
-                    "IMAP poll timed out after {NEWSLETTER_POLL_TIMEOUT_SECS}s"
-                )),
-            };
-            (feed_id, fetched)
-        });
-    }
-
-    let mut total_new = 0usize;
-    while let Some(joined) = set.join_next().await {
-        let Ok((feed_id, fetched)) = joined else {
-            continue;
-        };
-        match fetched {
-            Ok(messages) => {
-                // Parse the RFC822 bytes into articles *before* taking the DB
-                // lock — `email_to_article` sanitizes HTML and is CPU-bound, so
-                // doing it inside the locked scope would starve concurrent queries.
-                let articles: Vec<_> = messages
-                    .iter()
-                    .filter_map(|raw| newsletter::email_to_article(raw))
-                    .map(|p| p.article)
-                    .collect();
-                total_new +=
-                    upsert_articles(db, feed_id, &articles, dedup, rules, "newsletter").await;
-                let conn = db.lock().await;
-                let _ = db::touch_feed(&conn, feed_id);
-            }
-            Err(e) => {
-                log::warn!("newsletter poll failed (feed {feed_id}): {e}");
-                let conn = db.lock().await;
-                let _ = db::set_feed_error(&conn, feed_id, &e);
-            }
-        }
-    }
-    total_new
 }

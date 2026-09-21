@@ -59,24 +59,12 @@ opml = "1"
 # ISO-8859-1, …) instead of assuming UTF-8. Already in the tree via reqwest.
 encoding_rs = "0.8"
 
-# email newsletter ingestion (F5): IMAP polling + RFC822 parsing.
-# `imap` 3.x is pre-release; pinned exactly. `rustls-tls` avoids an OpenSSL
-# system dependency, keeping the CI/build environment self-contained.
-imap = { version = "=3.0.0-alpha.15", default-features = false, features = ["rustls-tls"] }
-mail-parser = "0.11"
-
 # content
 ammonia = "4.1.2"
 dom_smoothie = "0.17"
 # Rewrite lazy-loaded <img> tags (real URL in data-src/srcset) before ammonia
 # strips those attributes — see sanitize::promote_lazy_images.
 lol_html = "2"
-
-# "Send to Kindle" delivers the article as an email attachment (feature F8).
-# `rustls-tls` keeps the build self-contained (no system OpenSSL), matching the
-# `imap` crate's TLS choice above. The blocking transport is enough — sends run
-# on the Tokio blocking pool.
-lettre = { version = "0.11", default-features = false, features = ["smtp-transport", "rustls-tls", "builder"] }
 
 # misc
 chrono = { version = "0.4", features = ["serde"] }

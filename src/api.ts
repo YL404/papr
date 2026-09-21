@@ -12,8 +12,6 @@ import type {
   Feed,
   Folder,
   Highlight,
-  NewsletterInput,
-  NewsletterSource,
   RefreshProgress,
   Rule,
   RuleAction,
@@ -293,14 +291,6 @@ export const setHighlightColor = (id: number, color: string) =>
   invoke<void>("set_highlight_color", { id, color });
 export const deleteHighlight = (id: number) =>
   invoke<void>("delete_highlight", { id });
-
-// ── newsletter sources (IMAP-polled email newsletters) ──
-export const addNewsletterSource = (input: NewsletterInput) =>
-  invoke<Feed>("add_newsletter_source", { input });
-export const listNewsletterSources = () =>
-  invoke<NewsletterSource[]>("list_newsletter_sources");
-export const removeNewsletterSource = (feedId: number) =>
-  invoke<void>("remove_newsletter_source", { feedId });
 
 // ── in-app original-page view (issue #49) ──
 // A native child webview overlaid on the reading area. Bounds are logical
