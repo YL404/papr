@@ -223,7 +223,7 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
         //
         // Wrapping the effective date in `datetime()` parses both formats to
         // one canonical representation. The ORDER BY clauses are wrapped to
-        // match (see `list_articles` / `digest_source` / `preview_rule`); an
+        // match (see `list_articles` / `preview_rule`); an
         // index on the raw column can't serve a `datetime()`-wrapped sort, so
         // the index expression must be wrapped identically for the planner to
         // keep using it (verified with EXPLAIN QUERY PLAN — no temp B-tree).
@@ -1385,48 +1385,6 @@ fn fts_query(input: &str, or_join: bool) -> String {
     } else {
         terms.join(" ")
     }
-}
-
-/// Retrieve up to `limit` articles relevant to a natural-language `question`,
-/// for use as RAG context. Uses OR-joined FTS terms so a multi-word question
-/// still matches articles that contain *some* of its keywords — an AND join
-/// (as explicit search uses) would require every word to appear and so return
-/// nothing for a real question. Returns `(id, title, feed_title)` ordered by
-/// FTS relevance. An all-stopword / punctuation-only question yields no rows.
-pub fn search_articles_for_rag(
-    conn: &Connection,
-    question: &str,
-    limit: i64,
-) -> AppResult<Vec<(i64, String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT a.id, a.title, f.title
-         FROM articles a
-         JOIN feeds f ON f.id = a.feed_id
-         JOIN articles_fts fts ON fts.rowid = a.id
-         WHERE articles_fts MATCH ?1
-         ORDER BY fts.rank
-         LIMIT ?2",
-    )?;
-    let rows = stmt
-        .query_map(params![fts_query(question, true), limit], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-        })?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Recent articles as `(title, feed_title, text)` for building an AI digest.
-pub fn digest_source(conn: &Connection, limit: i64) -> AppResult<Vec<(String, String, String)>> {
-    let mut stmt = conn.prepare(
-        "SELECT a.title, f.title, substr(a.body_text, 1, 600)
-         FROM articles a JOIN feeds f ON f.id = a.feed_id
-         ORDER BY datetime(COALESCE(a.published_at, a.fetched_at)) DESC, a.id DESC
-         LIMIT ?1",
-    )?;
-    let rows = stmt
-        .query_map(params![limit], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
 }
 
 pub fn get_article(conn: &Connection, id: i64) -> AppResult<ArticleDetail> {
@@ -2970,36 +2928,6 @@ mod tests {
         upsert_article(conn, feed_id, &article, false, &[]).unwrap();
     }
 
-    #[test]
-    fn rag_search_matches_any_keyword_not_all() {
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT id FROM feeds", [], |r| r.get(0))
-            .unwrap();
-        add_article(&conn, feed_id, "rust", "Rust news", "the borrow checker explained");
-        add_article(&conn, feed_id, "privacy", "Privacy law", "a new data privacy regulation");
-
-        // A natural-language question shares only *some* words with each
-        // article. An AND join would require every word to appear and return
-        // nothing; the OR-based RAG search still finds both relevant pieces.
-        let hits = search_articles_for_rag(
-            &conn,
-            "what does the new privacy regulation say about the borrow checker",
-            6,
-        )
-        .unwrap();
-        let titles: Vec<&str> = hits.iter().map(|(_, t, _)| t.as_str()).collect();
-        assert!(titles.contains(&"Rust news"), "got: {titles:?}");
-        assert!(titles.contains(&"Privacy law"), "got: {titles:?}");
-    }
-
-    #[test]
-    fn rag_search_empty_question_returns_no_rows() {
-        let (conn, _aid) = test_db();
-        // An all-stopword / punctuation-only question must not error and must
-        // return nothing (the match-nothing `""` expression).
-        assert!(search_articles_for_rag(&conn, "??? !!!", 6).unwrap().is_empty());
-    }
 
     #[test]
     fn create_tag_is_idempotent_on_name() {

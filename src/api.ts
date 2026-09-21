@@ -156,21 +156,6 @@ export function aiSummarize(
   return invoke<void>("ai_summarize", { articleId, onToken: channel });
 }
 
-export function aiAsk(
-  question: string,
-  onToken: (e: AiEvent) => void,
-): Promise<void> {
-  const channel = new Channel<AiEvent>();
-  channel.onmessage = onToken;
-  return invoke<void>("ai_ask", { question, onToken: channel });
-}
-
-export function aiDigest(onToken: (e: AiEvent) => void): Promise<void> {
-  const channel = new Channel<AiEvent>();
-  channel.onmessage = onToken;
-  return invoke<void>("ai_digest", { onToken: channel });
-}
-
 /** Translate the article body into `lang` using `engine` (`llm` / `google` /
  *  `deepl` / `bing`). Progress is reported per batch over `onEvent` (start →
  *  batch* → done); the full result is also persisted and returned via the final

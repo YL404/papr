@@ -248,8 +248,6 @@ pub fn run() {
             commands::get_setting,
             commands::set_setting,
             commands::ai_summarize,
-            commands::ai_ask,
-            commands::ai_digest,
             commands::ai_translate,
             commands::translate_article_preview,
             commands::default_translate_prompt,

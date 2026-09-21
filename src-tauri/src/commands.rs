@@ -808,8 +808,7 @@ pub async fn ai_summarize(
     // A title-only item (link-aggregator posts, some podcast/video feeds carry
     // no body text) gives the model nothing to summarize. Without this guard it
     // would invent a "summary" from the bare title alone — and that fabricated
-    // text would then be persisted to `ai_summary`. Bail out the same way
-    // `ai_ask` / `ai_digest` do when their input is empty.
+    // text would then be persisted to `ai_summary`.
     if body.trim().is_empty() {
         return Err(AppError::code("noArticleBody"));
     }
@@ -841,87 +840,6 @@ pub async fn ai_summarize(
             outcome.usage.map(|u| u.total() as i64),
         )?;
     }
-    Ok(())
-}
-
-/// Answer a question using the user's subscribed articles as RAG context.
-/// Retrieval currently uses FTS5 keyword search (semantic search is Phase 5).
-#[tauri::command]
-pub async fn ai_ask(
-    state: State<'_, AppState>,
-    question: String,
-    on_token: Channel<AiEvent>,
-) -> AppResult<()> {
-    let (cfg, context, lang) = {
-        let conn = state.read().await;
-        let cfg = load_ai_config(&conn)?;
-        // RAG retrieval is recall-oriented: match articles that share *any* of
-        // the question's keywords. `list_articles` AND-joins every search word,
-        // which for a natural-language question matches nothing.
-        let hits = db::search_articles_for_rag(&conn, &question, 6)?;
-        let mut context = String::new();
-        for (id, _title, feed_title) in hits {
-            let (title, body) = db::article_text(&conn, id)?;
-            context.push_str(&format!(
-                "## {} — {}\n{}\n\n",
-                title,
-                feed_title,
-                truncate(&body, 1200)
-            ));
-        }
-        (cfg, context, response_language(&conn))
-    };
-
-    let system = format!(
-        "You answer the user's question using only the provided \
-         articles from their RSS subscriptions. Cite the article \
-         titles you draw from. If the articles do not contain the \
-         answer, say so plainly.{lang}"
-    );
-    let user = if context.trim().is_empty() {
-        format!("No relevant articles were found.\n\nQuestion: {question}")
-    } else {
-        format!("Articles from the user's feeds:\n\n{context}---\n\nQuestion: {question}")
-    };
-
-    let http = state.http();
-    stream_to_channel(&http, &cfg, &system, &user, &on_token, ai::MAX_TOKENS).await?;
-    Ok(())
-}
-
-/// Stream an AI briefing that synthesizes the most recent articles by theme.
-#[tauri::command]
-pub async fn ai_digest(
-    state: State<'_, AppState>,
-    on_token: Channel<AiEvent>,
-) -> AppResult<()> {
-    let (cfg, articles, lang) = {
-        let conn = state.read().await;
-        (
-            load_ai_config(&conn)?,
-            db::digest_source(&conn, 30)?,
-            response_language(&conn),
-        )
-    };
-    if articles.is_empty() {
-        return Err(AppError::code("noArticles"));
-    }
-
-    let mut corpus = String::new();
-    for (title, feed, text) in &articles {
-        corpus.push_str(&format!("- [{feed}] {title}: {}\n", truncate(text, 400)));
-    }
-
-    let system = format!(
-        "You are the user's personal news briefer. From the recent \
-         articles, write a crisp briefing: group related items into \
-         2-4 themed sections with short headers, lead with what \
-         matters most, and keep it skimmable. Plain prose, no preamble.{lang}"
-    );
-    let user = format!("Recent articles from my feeds:\n\n{corpus}");
-
-    let http = state.http();
-    stream_to_channel(&http, &cfg, &system, &user, &on_token, ai::MAX_TOKENS).await?;
     Ok(())
 }
 
