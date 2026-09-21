@@ -96,7 +96,7 @@ repair the binary path on re-run.)
 | Read | `papr`, `feeds`, `list`, `read`, `search` |
 | Triage | `mark`, `mark-all`, `extract`, `refresh` |
 | Subscriptions | `subscribe`, `unsubscribe`, `feed`, `folder`, `folders`, `opml` |
-| Organise | `tags`, `tag`, `rules`, `rule` |
+| Organise | `tags`, `tag` |
 | Sync | `sync status/connect/disconnect/run` (FreshRSS / Miniflux) |
 | System | `settings`, `stats`, `admin`, `setup` |
 

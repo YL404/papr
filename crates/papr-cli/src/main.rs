@@ -143,13 +143,6 @@ enum Cmd {
         #[command(subcommand)]
         cmd: TagCmd,
     },
-    /// List auto-tagging / filter rules.
-    Rules,
-    /// Manage filter rules (create / delete / enable / disable).
-    Rule {
-        #[command(subcommand)]
-        cmd: RuleCmd,
-    },
     /// Import or export feeds as OPML.
     Opml {
         #[command(subcommand)]
@@ -254,34 +247,6 @@ enum TagCmd {
     },
 }
 
-#[derive(Subcommand)]
-enum RuleCmd {
-    /// Create a rule: match `query` keywords in `field`, then take `action`.
-    Create {
-        name: String,
-        /// Comma-separated keywords (a match fires if any one is a substring).
-        query: String,
-        /// Which text to match.
-        #[arg(long, default_value = "title", value_parser = ["title", "author", "content", "any"])]
-        field: String,
-        /// What to do on a match.
-        #[arg(long, default_value = "skip", value_parser = ["skip", "read", "star"])]
-        action: String,
-        /// Scope the rule to one feed (default: all feeds).
-        #[arg(long, value_name = "ID")]
-        feed: Option<i64>,
-    },
-    /// Delete a rule.
-    Delete {
-        id: i64,
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Enable a rule.
-    Enable { id: i64 },
-    /// Disable a rule.
-    Disable { id: i64 },
-}
 
 
 
@@ -407,8 +372,6 @@ async fn run(cli: Cli) -> Result<String, AxiError> {
         Some(Cmd::Folder { cmd }) => cmd_folder(&path, cmd),
         Some(Cmd::Feed { cmd }) => cmd_feed(&path, cmd),
         Some(Cmd::Tag { cmd }) => cmd_tag(&path, cmd),
-        Some(Cmd::Rules) => cmd_rules(&path),
-        Some(Cmd::Rule { cmd }) => cmd_rule(&path, cmd),
         Some(Cmd::Opml { cmd }) => cmd_opml(&path, cmd),
         Some(Cmd::Settings { cmd }) => cmd_settings(&path, cmd),
         Some(Cmd::Stats) => cmd_stats(&path),
@@ -852,16 +815,13 @@ async fn cmd_subscribe(path: &Path, url: &str, folder: Option<i64>) -> Result<St
     .map_err(db_err)?;
 
     // Initial population: ingest the articles we already parsed.
-    // A failure to load rules is a real DB error — surface it rather than
-    // silently ingesting with no rules applied.
-    let rules = db::active_rules(&conn).map_err(db_err)?;
     let dedup = db::setting_flag(&conn, "dedup_enabled", false);
     let mut new_count = 0usize;
     let mut failed = 0usize;
     for article in &parsed.articles {
         // A single malformed item shouldn't abort the whole subscription, but
         // its failure is counted and reported, not hidden behind a clean total.
-        match db::upsert_article(&conn, feed_id, article, dedup, &rules) {
+        match db::upsert_article(&conn, feed_id, article, dedup) {
             Ok(true) => new_count += 1,
             Ok(false) => {}
             Err(_) => failed += 1,
@@ -1078,68 +1038,6 @@ fn cmd_tag(path: &Path, cmd: TagCmd) -> Result<String, AxiError> {
             ok_line(format!("untagged: article {article_id} -= tag {tag_id}"))
         }
     }
-}
-
-// ─────────────────────────────── rules ───────────────────────────────
-
-fn cmd_rules(path: &Path) -> Result<String, AxiError> {
-    let conn = open_ro(path)?;
-    let rules = db::list_rules(&conn).map_err(db_err)?;
-    let rows: Vec<Value> = rules
-        .iter()
-        .map(|r| {
-            json!({
-                "id": r.id,
-                "name": r.name,
-                "enabled": r.enabled,
-                "field": r.field,
-                "query": r.query,
-                "action": r.action,
-                "feed": r.feed_id.map(|f| f.to_string()).unwrap_or_else(|| "all".into()),
-            })
-        })
-        .collect();
-    let mut d = Doc::new();
-    d.set("rules", Value::Array(rows));
-    d.help(vec![if rules.is_empty() {
-        "Run `papr rule create <name> <keywords>` to add one".into()
-    } else {
-        "Run `papr rule disable <id>` to turn a rule off".into()
-    }]);
-    Ok(d.into_toon())
-}
-
-fn cmd_rule(path: &Path, cmd: RuleCmd) -> Result<String, AxiError> {
-    let conn = open_rw(path)?;
-    match cmd {
-        RuleCmd::Create { name, query, field, action, feed } => {
-            let id = db::create_rule(&conn, &name, feed, &field, &query, &action).map_err(db_err)?;
-            ok_line(format!("rule: #{id} {name} ({field} ~ {query} → {action})"))
-        }
-        RuleCmd::Delete { id, yes } => {
-            require_yes(yes, "rule delete", &format!("papr rule delete {id}"))?;
-            db::delete_rule(&conn, id).map_err(db_err)?;
-            ok_line(format!("rule: #{id} deleted"))
-        }
-        RuleCmd::Enable { id } => set_rule_enabled(&conn, id, true),
-        RuleCmd::Disable { id } => set_rule_enabled(&conn, id, false),
-    }
-}
-
-fn set_rule_enabled(conn: &Connection, id: i64, on: bool) -> Result<String, AxiError> {
-    let rules = db::list_rules(conn).map_err(db_err)?;
-    let Some(r) = rules.into_iter().find(|r| r.id == id) else {
-        return Err(AxiError::runtime(format!("rule #{id} not found")));
-    };
-    if r.enabled == on {
-        return ok_line(format!(
-            "rule: #{id} already {} (no-op)",
-            if on { "enabled" } else { "disabled" }
-        ));
-    }
-    db::update_rule(conn, id, &r.name, on, r.feed_id, &r.field, &r.query, &r.action)
-        .map_err(db_err)?;
-    ok_line(format!("rule: #{id} {}", if on { "enabled" } else { "disabled" }))
 }
 
 // ──────────────────────── opml / settings / admin ────────────────────────

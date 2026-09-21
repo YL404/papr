@@ -64,26 +64,6 @@ export interface Tag {
   articleCount: number;
 }
 
-export type RuleField = "title" | "author" | "content" | "any";
-export type RuleAction = "skip" | "read" | "star";
-
-/** Dry-run result for a draft filter rule (see preview_rule command). */
-export interface RulePreview {
-  count: number;
-  samples: string[];
-}
-
-export interface Rule {
-  id: number;
-  name: string;
-  enabled: boolean;
-  feedId: number | null;
-  field: RuleField;
-  query: string;
-  action: RuleAction;
-  position: number;
-}
-
 export interface ArticlePreviewTranslation {
   articleId: number;
   title: string;

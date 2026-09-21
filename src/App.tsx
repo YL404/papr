@@ -277,7 +277,7 @@ export default function App() {
       .refreshFeeds(undefined, scope)
       .then((n) => {
         // Refresh only the caches a feed fetch can actually change — a bare
-        // `invalidateQueries()` would also refetch unrelated queries (rules,
+        // `invalidateQueries()` would also refetch unrelated queries (tags,
         // FreshRSS status, the open feed-discovery search).
         actions.refreshAfterFetch();
         showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));

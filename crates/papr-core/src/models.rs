@@ -90,24 +90,6 @@ pub struct Tag {
     pub article_count: i64,
 }
 
-/// A keyword filter applied to incoming articles at ingestion time.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Rule {
-    pub id: i64,
-    pub name: String,
-    pub enabled: bool,
-    /// `None` applies the rule to every feed; otherwise scoped to one feed.
-    pub feed_id: Option<i64>,
-    /// Which text to match: `title` | `author` | `content` | `any`.
-    pub field: String,
-    /// Comma-separated keywords; the rule fires if any one is a substring.
-    pub query: String,
-    /// What to do on a match: `skip` | `read` | `star`.
-    pub action: String,
-    pub position: i64,
-}
-
 /// A row in the article list pane. Keeps the payload small (no full HTML body).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

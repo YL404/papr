@@ -353,41 +353,6 @@
       "rsshubInstance": "Instance",
       "rsshubInstanceDesc": "Paste rsshub:// links to subscribe. Leave blank for the public rsshub.app, or point to your self-hosted instance."
     },
-    "filters": {
-      "title": "Filter rules",
-      "intro": "Rules run on every new article as it arrives \u2014 and, when you save, on matching articles you already have. Skip noisy keywords, or auto mark-read / star the things you care about.",
-      "newRule": "New rule",
-      "empty": "No rules yet.",
-      "untitled": "Untitled rule",
-      "saved": "Rule saved",
-      "deleted": "Rule deleted",
-      "appliedExisting": "Applied to {{count}} existing articles",
-      "confirmSkipTitle": "Delete existing articles?",
-      "confirmSkipMessage": "This discard rule matches {{count}} articles you already have. Saving will permanently delete them \u2014 this can't be undone. New articles will still be filtered going forward.",
-      "confirmSkipConfirm": "Delete & save",
-      "needQuery": "Enter at least one keyword",
-      "namePlaceholder": "Rule name (optional)",
-      "queryPlaceholder": "Keywords, comma-separated",
-      "matchIn": "Match in",
-      "thenLabel": "Then",
-      "scopeLabel": "Applies to",
-      "allFeeds": "All feeds",
-      "field": {
-        "title": "title",
-        "author": "author",
-        "content": "content",
-        "any": "anywhere"
-      },
-      "action": {
-        "skip": "Skip",
-        "read": "Mark read",
-        "star": "Star"
-      },
-      "preview": {
-        "checking": "Checking\u2026",
-        "count": "Matches {{count}} existing articles"
-      }
-    },
     "shortcuts": {
       "navigation": "Navigation",
       "nextArticle": "Next article",

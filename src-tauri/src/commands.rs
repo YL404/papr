@@ -176,9 +176,8 @@ pub async fn add_feed(
         db::update_feed_meta(&conn, feed_id, None, None, None, Some(fav))?;
     }
     let dedup = db::setting_flag(&conn, "dedup_enabled", false);
-    let rules = db::active_rules(&conn).unwrap_or_default();
     for article in &parsed.articles {
-        db::upsert_article(&conn, feed_id, article, dedup, &rules)?;
+        db::upsert_article(&conn, feed_id, article, dedup)?;
     }
     // Record that the feed was just fetched. `add_feed` fetches the document
     // here in step 1/2, so without this `last_fetched_at` would stay NULL —
@@ -192,8 +191,7 @@ pub async fn add_feed(
     let _ = db::touch_feed(&conn, feed_id);
     let last_fetched_at = db::feed_last_fetched(&conn, feed_id).ok().flatten();
     // Count actual unread rows rather than tallying insertions: keeps the
-    // returned `unread_count` aligned with the sidebar's `list_feeds` count
-    // regardless of how filter rules pre-set article state.
+    // returned `unread_count` aligned with the sidebar's `list_feeds` count.
     let unread = db::count_feed_unread(&conn, feed_id)?;
     drop(conn);
 
@@ -1201,99 +1199,11 @@ pub async fn set_article_tag(
     db::set_article_tag(&conn, article_id, tag_id, on)
 }
 
-// ─────────────────────────── filter rules ───────────────────────────
-
-#[tauri::command]
-pub async fn list_rules(state: State<'_, AppState>) -> AppResult<Vec<Rule>> {
-    let conn = state.read().await;
-    db::list_rules(&conn)
-}
-
-#[tauri::command]
-pub async fn create_rule(
-    state: State<'_, AppState>,
-    name: String,
-    feed_id: Option<i64>,
-    field: String,
-    query: String,
-    action: String,
-) -> AppResult<i64> {
-    if query.trim().is_empty() {
-        return Err(AppError::code("emptyRuleQuery"));
-    }
-    let conn = state.db.lock().await;
-    db::create_rule(&conn, name.trim(), feed_id, &field, query.trim(), &action)
-}
-
-#[tauri::command]
-#[allow(clippy::too_many_arguments)]
-pub async fn update_rule(
-    state: State<'_, AppState>,
-    id: i64,
-    name: String,
-    enabled: bool,
-    feed_id: Option<i64>,
-    field: String,
-    query: String,
-    action: String,
-) -> AppResult<()> {
-    if query.trim().is_empty() {
-        return Err(AppError::code("emptyRuleQuery"));
-    }
-    let conn = state.db.lock().await;
-    db::update_rule(&conn, id, name.trim(), enabled, feed_id, &field, query.trim(), &action)
-}
-
-#[tauri::command]
-pub async fn delete_rule(state: State<'_, AppState>, id: i64) -> AppResult<()> {
-    let conn = state.db.lock().await;
-    db::delete_rule(&conn, id)
-}
-
-/// Apply a rule's action to the already-stored articles it matches and return
-/// how many were acted on. The frontend calls this right after saving a rule so
-/// an enabled rule affects the existing backlog, not just future articles. A
-/// `skip` rule deletes its matches, so the UI confirms before invoking this.
-#[tauri::command]
-pub async fn apply_rule_to_existing(
-    state: State<'_, AppState>,
-    feed_id: Option<i64>,
-    field: String,
-    query: String,
-    action: String,
-) -> AppResult<usize> {
-    if query.trim().is_empty() {
-        return Err(AppError::code("emptyRuleQuery"));
-    }
-    let conn = state.db.lock().await;
-    db::apply_rule_to_existing(&conn, feed_id, &field, query.trim(), &action)
-}
-
 /// Persist a reordered tag list (ids in the new display order).
 #[tauri::command]
 pub async fn reorder_tags(state: State<'_, AppState>, ids: Vec<i64>) -> AppResult<()> {
     let conn = state.db.lock().await;
     db::reorder_tags(&conn, &ids)
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RulePreview {
-    count: i64,
-    samples: Vec<String>,
-}
-
-/// Dry-run a draft rule against already-stored articles.
-#[tauri::command]
-pub async fn preview_rule(
-    state: State<'_, AppState>,
-    feed_id: Option<i64>,
-    field: String,
-    query: String,
-) -> AppResult<RulePreview> {
-    let conn = state.read().await;
-    let (count, samples) = db::preview_rule(&conn, feed_id, &field, query.trim())?;
-    Ok(RulePreview { count, samples })
 }
 
 #[cfg(test)]

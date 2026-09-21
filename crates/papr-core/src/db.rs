@@ -221,7 +221,7 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
         //
         // Wrapping the effective date in `datetime()` parses both formats to
         // one canonical representation. The ORDER BY clauses are wrapped to
-        // match (see `list_articles` / `preview_rule`); an
+        // match (see `list_articles`); an
         // index on the raw column can't serve a `datetime()`-wrapped sort, so
         // the index expression must be wrapped identically for the planner to
         // keep using it (verified with EXPLAIN QUERY PLAN — no temp B-tree).
@@ -318,11 +318,10 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
 /// SQLite's built-in `LOWER()` only case-folds ASCII (it has no Unicode
 /// awareness without the ICU extension, which the bundled build omits). Rust's
 /// `str::to_lowercase()` is fully Unicode-aware. Anywhere a query needs to
-/// match the case-folding the Rust code does — notably `preview_rule`, which
-/// must agree with `rule_matches`'s `to_lowercase()` so the rule preview counts
-/// exactly the articles live ingestion would act on — `unicode_lower` provides
-/// it. SQLite scalar functions are per-connection, so this runs for every
-/// connection (the writer and each pooled reader).
+/// match the case-folding the Rust code does — the article-list query must
+/// agree with it exactly — `unicode_lower` provides it. SQLite scalar
+/// functions are per-connection, so this runs for every connection (the writer
+/// and each pooled reader).
 fn register_functions(conn: &Connection) -> AppResult<()> {
     conn.create_scalar_function(
         "unicode_lower",
@@ -833,56 +832,18 @@ pub struct NewArticle {
     pub enclosures: Vec<Enclosure>,
 }
 
-/// True if `rule` (scoped to `feed_id`) matches the incoming article `a`.
-/// The query is a comma-separated keyword list; any substring hit fires it.
-fn rule_matches(rule: &Rule, feed_id: i64, a: &NewArticle) -> bool {
-    if rule.feed_id.is_some_and(|fid| fid != feed_id) {
-        return false;
-    }
-    let author = a.author.as_deref().unwrap_or("");
-    // The fields the rule searches. `any` checks each field *independently*
-    // (mirroring `preview_rule`'s per-column LIKE): a keyword must lie wholly
-    // within one field. Concatenating the fields would let a keyword straddle
-    // a field boundary (e.g. a title ending in "machine" + a body starting
-    // with "learning" matching "machine learning"), so live ingestion would
-    // act on articles the rule preview never counted.
-    let fields: Vec<String> = match rule.field.as_str() {
-        "author" => vec![author.to_lowercase()],
-        "content" => vec![a.body_text.to_lowercase()],
-        "any" => vec![
-            a.title.to_lowercase(),
-            author.to_lowercase(),
-            a.body_text.to_lowercase(),
-        ],
-        _ => vec![a.title.to_lowercase()],
-    };
-    rule.query
-        .split(',')
-        .map(|t| t.trim().to_lowercase())
-        .filter(|t| !t.is_empty())
-        .any(|term| fields.iter().any(|h| h.contains(&term)))
-}
-
 /// Insert an article if it is new (by feed_id + guid). Returns `true` only when
 /// a genuinely **new and unread** article was inserted — callers tally this as
 /// the count of fresh articles surfaced to the user (refresh toast, "new
 /// articles" notification).
 ///
-/// An article inserted but pre-marked read by a `read` rule returns `false`:
-/// the row landed, but it never shows up as unread, so counting it would
-/// inflate the "N new articles" figure and disagree with the sidebar's unread
-/// count (the same overcount `add_feed` guards against).
-///
 /// When `dedup` is on, an article whose URL already exists (in any feed) is
-/// skipped — collapsing the same story pushed by multiple feeds. Enabled
-/// `rules` are evaluated first: a `skip` match drops the article entirely,
-/// while `read` / `star` matches pre-set the article's state on insert.
+/// skipped — collapsing the same story pushed by multiple feeds.
 pub fn upsert_article(
     conn: &Connection,
     feed_id: i64,
     a: &NewArticle,
     dedup: bool,
-    rules: &[Rule],
 ) -> AppResult<bool> {
     if dedup {
         if let Some(url) = a.url.as_deref().filter(|u| !u.is_empty()) {
@@ -910,19 +871,6 @@ pub fn upsert_article(
     if tombstoned {
         return Ok(false);
     }
-    // Apply filter rules: skip wins outright; read / star tint the new row.
-    let (mut start_read, mut start_starred) = (false, false);
-    for rule in rules {
-        if !rule_matches(rule, feed_id, a) {
-            continue;
-        }
-        match rule.action.as_str() {
-            "skip" => return Ok(false),
-            "read" => start_read = true,
-            "star" => start_starred = true,
-            _ => {}
-        }
-    }
     // The article row, its FTS index entry, and its enclosures must land
     // together — a partial insert leaves an unsearchable or enclosure-less
     // article. Wrap them in a transaction so a mid-loop failure rolls back.
@@ -931,12 +879,11 @@ pub fn upsert_article(
         "INSERT INTO articles
             (feed_id, guid, url, title, author, summary, content_html, body_text,
              image_url, published_at, is_read, is_starred)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 0, 0)
          ON CONFLICT(feed_id, guid) DO NOTHING",
         params![
             feed_id, a.guid, a.url, a.title, a.author, a.summary,
-            a.content_html, a.body_text, a.image_url, a.published_at,
-            start_read, start_starred
+            a.content_html, a.body_text, a.image_url, a.published_at
         ],
     )?;
     if n == 0 {
@@ -954,10 +901,7 @@ pub fn upsert_article(
         )?;
     }
     tx.commit()?;
-    // A row inserted but pre-marked read by a `read` rule is not "new" from
-    // the user's point of view — report it as not-inserted so it is excluded
-    // from new-article tallies.
-    Ok(!start_read)
+    Ok(true)
 }
 
 /// Build and run the article-list query for the given sidebar selection.
@@ -1592,213 +1536,6 @@ pub fn tags_for_article(conn: &Connection, article_id: i64) -> AppResult<Vec<Tag
     Ok(rows)
 }
 
-// ─────────────────────────── filter rules ───────────────────────────
-
-fn row_to_rule(r: &rusqlite::Row) -> rusqlite::Result<Rule> {
-    Ok(Rule {
-        id: r.get(0)?,
-        name: r.get(1)?,
-        enabled: r.get(2)?,
-        feed_id: r.get(3)?,
-        field: r.get(4)?,
-        query: r.get(5)?,
-        action: r.get(6)?,
-        position: r.get(7)?,
-    })
-}
-
-const RULE_COLS: &str = "id, name, enabled, feed_id, field, query, action, position";
-
-/// Every rule, enabled or not, ordered for the settings list.
-pub fn list_rules(conn: &Connection) -> AppResult<Vec<Rule>> {
-    let mut stmt =
-        conn.prepare(&format!("SELECT {RULE_COLS} FROM rules ORDER BY position, id"))?;
-    let rows = stmt
-        .query_map([], row_to_rule)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Only the enabled rules — the set evaluated against incoming articles.
-pub fn active_rules(conn: &Connection) -> AppResult<Vec<Rule>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {RULE_COLS} FROM rules WHERE enabled = 1 ORDER BY position, id"
-    ))?;
-    let rows = stmt
-        .query_map([], row_to_rule)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-pub fn create_rule(
-    conn: &Connection,
-    name: &str,
-    feed_id: Option<i64>,
-    field: &str,
-    query: &str,
-    action: &str,
-) -> AppResult<i64> {
-    // Position the new rule at the end. `MAX(position)+1` — not `COUNT(*)` —
-    // is required: deleting a rule from the middle leaves a gap, so a fresh
-    // `COUNT(*)` would collide with an existing rule's position and the new
-    // rule would not sort last (`ORDER BY position, id` would then slot it
-    // before any later-positioned rule). Rule order is semantically load-
-    // bearing — `active_rules` evaluates in this order and a `skip` match
-    // short-circuits — so a stale position can change which action fires.
-    let next: i64 = conn.query_row(
-        "SELECT COALESCE(MAX(position), -1) + 1 FROM rules",
-        [],
-        |r| r.get(0),
-    )?;
-    conn.execute(
-        "INSERT INTO rules(name, feed_id, field, query, action, position)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![name, feed_id, field, query, action, next],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-#[allow(clippy::too_many_arguments)]
-pub fn update_rule(
-    conn: &Connection,
-    id: i64,
-    name: &str,
-    enabled: bool,
-    feed_id: Option<i64>,
-    field: &str,
-    query: &str,
-    action: &str,
-) -> AppResult<()> {
-    conn.execute(
-        "UPDATE rules SET name = ?2, enabled = ?3, feed_id = ?4,
-                          field = ?5, query = ?6, action = ?7
-         WHERE id = ?1",
-        params![id, name, enabled, feed_id, field, query, action],
-    )?;
-    Ok(())
-}
-
-pub fn delete_rule(conn: &Connection, id: i64) -> AppResult<()> {
-    conn.execute("DELETE FROM rules WHERE id = ?1", params![id])?;
-    Ok(())
-}
-
-/// Build the `WHERE` fragment (and its bind values) that selects the articles a
-/// rule matches: one `unicode_lower(col) LIKE ?` per (keyword × searched
-/// column), OR-joined, optionally scoped to one feed. Columns are *unaliased*
-/// so the fragment slots straight into a bare `SELECT … FROM articles`,
-/// `UPDATE articles` or `DELETE FROM articles`. Returns `None` when the query
-/// holds no usable keywords (a no-op rule), so callers can short-circuit.
-///
-/// `preview_rule` (count + samples) and `apply_rule_to_existing` (act) share
-/// this builder so the number the preview shows is exactly the set the apply
-/// touches. LIKE wildcards in a keyword are escaped so a literal `%` / `_`
-/// can't widen the match; the column side is folded with `unicode_lower` (not
-/// SQLite's ASCII-only `LOWER`) so it matches the Unicode-aware
-/// `to_lowercase()` `rule_matches` applies at ingestion — otherwise a keyword
-/// like `café` would be counted here but its `CAFÉ` articles missed, diverging
-/// the preview/apply from live ingestion.
-fn rule_match_where(
-    field: &str,
-    query: &str,
-    feed_id: Option<i64>,
-) -> Option<(String, Vec<Value>)> {
-    let terms: Vec<String> = query
-        .split(',')
-        .map(|t| t.trim().to_lowercase())
-        .filter(|t| !t.is_empty())
-        .collect();
-    if terms.is_empty() {
-        return None;
-    }
-    let cols: &[&str] = match field {
-        "author" => &["author"],
-        "content" => &["body_text"],
-        "any" => &["title", "author", "body_text"],
-        _ => &["title"],
-    };
-    let mut ors: Vec<String> = Vec::new();
-    let mut binds: Vec<Value> = Vec::new();
-    for term in &terms {
-        let escaped = term
-            .replace('\\', "\\\\")
-            .replace('%', "\\%")
-            .replace('_', "\\_");
-        for col in cols {
-            ors.push(format!("unicode_lower(COALESCE({col},'')) LIKE ? ESCAPE '\\'"));
-            binds.push(Value::Text(format!("%{escaped}%")));
-        }
-    }
-    let mut where_sql = format!("({})", ors.join(" OR "));
-    if let Some(fid) = feed_id {
-        where_sql.push_str(" AND feed_id = ?");
-        binds.push(Value::Integer(fid));
-    }
-    Some((where_sql, binds))
-}
-
-/// Preview how a draft rule would behave: the number of *already-stored*
-/// articles its keywords match, plus a handful of recent sample titles.
-/// Lets the user sanity-check a rule before saving it.
-pub fn preview_rule(
-    conn: &Connection,
-    feed_id: Option<i64>,
-    field: &str,
-    query: &str,
-) -> AppResult<(i64, Vec<String>)> {
-    let Some((where_sql, binds)) = rule_match_where(field, query, feed_id) else {
-        return Ok((0, Vec::new()));
-    };
-    let count: i64 = conn.query_row(
-        &format!("SELECT COUNT(*) FROM articles WHERE {where_sql}"),
-        params_from_iter(binds.iter().cloned()),
-        |r| r.get(0),
-    )?;
-    let mut stmt = conn.prepare(&format!(
-        "SELECT title FROM articles WHERE {where_sql}
-         ORDER BY datetime(COALESCE(published_at, fetched_at)) DESC, id DESC
-         LIMIT 5"
-    ))?;
-    let samples = stmt
-        .query_map(params_from_iter(binds), |r| r.get(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok((count, samples))
-}
-
-/// Apply a saved rule's action to the articles already in the store that it
-/// matches — the one-time backfill run when a rule is created or edited so it
-/// affects the existing backlog, not only articles fetched afterwards. Returns
-/// the number of articles acted on.
-///
-/// `skip` *deletes* its matches — the stored-article equivalent of dropping the
-/// article at ingestion. FK `ON DELETE CASCADE` (enclosures, tags)
-/// and the `articles_fts_ad` trigger keep dependent rows and the FTS index in
-/// sync, the same path retention cleanup relies on. `read` / `star` set the
-/// matching flag and skip rows that already carry it, so the returned count is
-/// the number of rows actually changed.
-pub fn apply_rule_to_existing(
-    conn: &Connection,
-    feed_id: Option<i64>,
-    field: &str,
-    query: &str,
-    action: &str,
-) -> AppResult<usize> {
-    let Some((where_sql, binds)) = rule_match_where(field, query, feed_id) else {
-        return Ok(0);
-    };
-    let sql = match action {
-        "skip" => format!("DELETE FROM articles WHERE {where_sql}"),
-        "read" => {
-            format!("UPDATE articles SET is_read = 1 WHERE ({where_sql}) AND is_read = 0")
-        }
-        "star" => {
-            format!("UPDATE articles SET is_starred = 1 WHERE ({where_sql}) AND is_starred = 0")
-        }
-        _ => return Ok(0),
-    };
-    Ok(conn.execute(&sql, params_from_iter(binds))?)
-}
-
 /// (total unread, starred, read-later) counts for the sidebar smart folders.
 pub fn smart_counts(conn: &Connection) -> AppResult<(i64, i64, i64)> {
     Ok(conn.query_row(
@@ -1947,7 +1684,7 @@ pub fn count_unread(conn: &Connection) -> AppResult<i64> {
 
 /// Unread article count for a single feed — the same expression `list_feeds`
 /// computes per row, used by `add_feed` so its returned `unread_count` matches
-/// what the sidebar will show (rules that pre-mark an article read must not be
+/// what the sidebar will show (an article pre-marked read must not be
 /// counted as unread).
 pub fn count_feed_unread(conn: &Connection, feed_id: i64) -> AppResult<i64> {
     Ok(conn.query_row(
@@ -1975,8 +1712,7 @@ mod tests {
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         MIGRATIONS.to_latest(&mut conn).unwrap();
         // The production `open` / `open_reader` register custom SQL functions;
-        // the in-memory test connection must too so `preview_rule`'s
-        // `unicode_lower` resolves.
+        // the in-memory test connection must too so `unicode_lower` resolves.
         register_functions(&conn).unwrap();
         let feed_id = insert_feed(
             &conn,
@@ -2000,7 +1736,7 @@ mod tests {
             published_at: None,
             enclosures: Vec::new(),
         };
-        upsert_article(&conn, feed_id, &article, false, &[]).unwrap();
+        upsert_article(&conn, feed_id, &article, false).unwrap();
         let article_id: i64 = conn
             .query_row("SELECT id FROM articles", [], |r| r.get(0))
             .unwrap();
@@ -2246,7 +1982,7 @@ mod tests {
             published_at: None,
             enclosures: Vec::new(),
         };
-        upsert_article(conn, feed_id, &article, false, &[]).unwrap();
+        upsert_article(conn, feed_id, &article, false).unwrap();
     }
 
 
@@ -2317,369 +2053,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn create_rule_after_middle_delete_sorts_last() {
-        // Same `COUNT(*)`-vs-`MAX(position)` hazard as tags: deleting a rule
-        // from the middle leaves a `position` gap, so a `COUNT(*)`-based
-        // position collides with an existing row and the new rule no longer
-        // sorts last. Rule order is load-bearing for ingestion evaluation.
-        let (conn, _aid) = test_db();
-        // Five rules, positions {0,1,2,3,4}.
-        let _a = create_rule(&conn, "alpha", None, "title", "x", "skip").unwrap();
-        let b = create_rule(&conn, "beta", None, "title", "y", "skip").unwrap();
-        let c = create_rule(&conn, "gamma", None, "title", "z", "skip").unwrap();
-        let _d = create_rule(&conn, "delta", None, "title", "w", "skip").unwrap();
-        let _e = create_rule(&conn, "epsilon", None, "title", "u", "skip").unwrap();
-        // Delete two from the middle, leaving positions {0,3,4} — wide enough
-        // that a `COUNT(*)` value (3) collides with a non-last rule.
-        delete_rule(&conn, b).unwrap();
-        delete_rule(&conn, c).unwrap();
-        let zoo = create_rule(&conn, "zeta", None, "title", "v", "skip").unwrap();
-
-        let order: Vec<i64> = list_rules(&conn).unwrap().iter().map(|r| r.id).collect();
-        assert_eq!(
-            order.last(),
-            Some(&zoo),
-            "a rule created after a middle delete must sort last, got {order:?}",
-        );
-    }
-
-    // ── per-feed unread count ────────────────────────────────────────
-
-    #[test]
-    fn count_feed_unread_excludes_articles_pre_marked_read_by_a_rule() {
-        // A filter rule with a `read` action inserts a matching article
-        // already marked read. `count_feed_unread` must agree with
-        // `list_feeds`: it counts only genuinely-unread rows.
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        // The fixture article is unread.
-        assert_eq!(count_feed_unread(&conn, feed_id).unwrap(), 1);
-
-        // A rule that pre-marks anything titled "Sponsored" as read.
-        create_rule(&conn, "ads", None, "title", "Sponsored", "read").unwrap();
-        let rules = active_rules(&conn).unwrap();
-
-        let read_by_rule = NewArticle {
-            guid: "g-sponsored".into(),
-            url: Some("https://example.com/sponsored".into()),
-            title: "Sponsored Post".into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "ad copy".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        let plain = NewArticle {
-            guid: "g-plain".into(),
-            url: Some("https://example.com/plain".into()),
-            title: "A Normal Post".into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "ordinary copy".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        // Both rows land, but `upsert_article` returns `true` only for the
-        // genuinely-unread one — the rule-read article is not "new".
-        assert!(
-            !upsert_article(&conn, feed_id, &read_by_rule, false, &rules).unwrap(),
-            "an article pre-marked read by a rule is not a new unread article"
-        );
-        assert!(upsert_article(&conn, feed_id, &plain, false, &rules).unwrap());
-
-        // Three articles inserted total, but the rule-read one is not unread.
-        assert_eq!(
-            count_feed_unread(&conn, feed_id).unwrap(),
-            2,
-            "the rule-read article must not be counted as unread"
-        );
-        // And it matches the count `list_feeds` computes for the same feed.
-        let from_list = list_feeds(&conn)
-            .unwrap()
-            .into_iter()
-            .find(|f| f.id == feed_id)
-            .unwrap()
-            .unread_count;
-        assert_eq!(from_list, 2);
-    }
-
-    #[test]
-    fn upsert_article_reports_rule_read_inserts_as_not_new() {
-        // The refresh scheduler tallies `upsert_article(..) == Ok(true)` into
-        // the "N new articles" count that drives the refresh toast and the OS
-        // notification. An article inserted but pre-marked read by a `read`
-        // rule never appears as unread, so it must NOT be counted as new —
-        // otherwise the toast/notification claims new articles the user can
-        // never find.
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        create_rule(&conn, "ads", None, "title", "Sponsored", "read").unwrap();
-        let rules = active_rules(&conn).unwrap();
-
-        let mk = |guid: &str, title: &str| NewArticle {
-            guid: guid.into(),
-            url: Some(format!("https://example.com/{guid}")),
-            title: title.into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "copy".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-
-        // Pre-marked read by the rule → not new.
-        assert!(!upsert_article(&conn, feed_id, &mk("g-ad", "Sponsored Item"), false, &rules)
-            .unwrap());
-        // A plain article → genuinely new.
-        assert!(upsert_article(&conn, feed_id, &mk("g-ok", "Real Story"), false, &rules)
-            .unwrap());
-        // A duplicate guid → not new (no double count).
-        assert!(!upsert_article(&conn, feed_id, &mk("g-ok", "Real Story"), false, &rules)
-            .unwrap());
-    }
-
-    // ── rule matching ────────────────────────────────────────────────
-
-    #[test]
-    fn any_field_rule_does_not_match_keyword_across_field_boundary() {
-        // An `any`-field rule must check each field independently — the same
-        // per-column semantics `preview_rule` uses. A keyword that only exists
-        // because the title's tail and the body's head happen to abut must NOT
-        // fire the rule; otherwise live ingestion acts on articles the rule
-        // preview never counted.
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-
-        // A `skip` rule keyed on the two-word phrase "rust weekly".
-        create_rule(&conn, "rw", None, "any", "rust weekly", "skip").unwrap();
-        let rules = active_rules(&conn).unwrap();
-
-        // Title ends in "rust", author starts with "weekly": the old code
-        // concatenated `title author body` with single spaces, so the phrase
-        // appeared only at that join. Per-field matching must not fire here,
-        // and the article must still insert.
-        let straddle = NewArticle {
-            guid: "g-straddle".into(),
-            url: Some("https://example.com/straddle".into()),
-            title: "All about rust".into(),
-            author: Some("Weekly Digest".into()),
-            summary: None,
-            content_html: None,
-            body_text: "body text".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        assert!(
-            upsert_article(&conn, feed_id, &straddle, false, &rules).unwrap(),
-            "a keyword straddling the title/author boundary must not skip the article"
-        );
-
-        // The phrase wholly within one field still triggers the skip.
-        let within = NewArticle {
-            guid: "g-within".into(),
-            url: Some("https://example.com/within".into()),
-            title: "The Rust Weekly roundup".into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "intro text".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        assert!(
-            !upsert_article(&conn, feed_id, &within, false, &rules).unwrap(),
-            "a keyword wholly within one field must still skip the article"
-        );
-    }
-
-    #[test]
-    fn preview_rule_case_folds_non_ascii_like_live_ingestion() {
-        // `rule_matches` folds case with Rust's Unicode-aware `to_lowercase()`,
-        // so a `café` rule matches a `CAFÉ` article during ingestion. SQLite's
-        // built-in `LOWER()` is ASCII-only and would leave `É` uppercase,
-        // making the preview undercount — `preview_rule` must use the
-        // Unicode-aware `unicode_lower` so its count agrees with ingestion.
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-
-        // An article whose title carries an upper-case non-ASCII letter.
-        let article = NewArticle {
-            guid: "g-cafe".into(),
-            url: Some("https://example.com/cafe".into()),
-            title: "CAFÉ CULTURE in Zürich".into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "body".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        assert!(upsert_article(&conn, feed_id, &article, false, &[]).unwrap());
-
-        // Lower-case non-ASCII keywords must still count the article.
-        for keyword in ["café", "zürich"] {
-            let (count, samples) =
-                preview_rule(&conn, None, "title", keyword).unwrap();
-            assert_eq!(count, 1, "keyword `{keyword}` should match the CAFÉ article");
-            assert_eq!(samples.len(), 1);
-        }
-
-        // And the rule that the preview describes must agree at ingest time:
-        // a `skip` rule on `café` drops a fresh `CAFÉ`-titled article.
-        create_rule(&conn, "no-cafe", None, "title", "café", "skip").unwrap();
-        let rules = active_rules(&conn).unwrap();
-        let fresh = NewArticle {
-            guid: "g-cafe-2".into(),
-            url: Some("https://example.com/cafe2".into()),
-            title: "Another CAFÉ Story".into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "body".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        assert!(
-            !upsert_article(&conn, feed_id, &fresh, false, &rules).unwrap(),
-            "ingestion must skip the article the `café` preview counted"
-        );
-    }
-
-    // ── apply_rule_to_existing (retroactive backfill on save) ─────────
-
-    fn seed(conn: &Connection, feed_id: i64, guid: &str, title: &str) {
-        let a = NewArticle {
-            guid: guid.into(),
-            url: Some(format!("https://example.com/{guid}")),
-            title: title.into(),
-            author: None,
-            summary: None,
-            content_html: None,
-            body_text: "body".into(),
-            image_url: None,
-            published_at: None,
-            enclosures: Vec::new(),
-        };
-        upsert_article(conn, feed_id, &a, false, &[]).unwrap();
-    }
-
-    #[test]
-    fn apply_rule_to_existing_stars_matching_backlog_idempotently() {
-        // The bug this guards: saving a `star` rule did nothing to articles
-        // already stored — only `upsert_article` ran the rule, and that fires
-        // only on freshly fetched articles. `apply_rule_to_existing` backfills
-        // the matches when the rule is saved.
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        seed(&conn, feed_id, "j1", "Learning Java today");
-        seed(&conn, feed_id, "j2", "JavaScript tips");
-        seed(&conn, feed_id, "p1", "Rust ownership");
-
-        let n = apply_rule_to_existing(&conn, None, "title", "java", "star").unwrap();
-        assert_eq!(n, 2, "both Java/JavaScript titles get starred");
-        let starred: i64 = conn
-            .query_row("SELECT COUNT(*) FROM articles WHERE is_starred = 1", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        assert_eq!(starred, 2);
-
-        // Re-running counts only rows it actually changes — already-starred rows
-        // are excluded, so a second save reports 0.
-        let again = apply_rule_to_existing(&conn, None, "title", "java", "star").unwrap();
-        assert_eq!(again, 0);
-    }
-
-    #[test]
-    fn apply_rule_to_existing_skip_deletes_matches_keeping_fts_in_sync() {
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        seed(&conn, feed_id, "a1", "Sponsored junk");
-        seed(&conn, feed_id, "a2", "more Sponsored stuff");
-        seed(&conn, feed_id, "a3", "real content");
-
-        // The preview count is exactly the set the skip apply deletes — they
-        // share `rule_match_where`, so the user is never surprised.
-        let (preview, _) = preview_rule(&conn, None, "title", "sponsored").unwrap();
-        assert_eq!(preview, 2);
-        let n = apply_rule_to_existing(&conn, None, "title", "sponsored", "skip").unwrap();
-        assert_eq!(n, 2);
-
-        let remaining: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM articles WHERE title LIKE '%Sponsored%'",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(remaining, 0, "matching articles are deleted");
-
-        // The `articles_fts_ad` trigger drops the FTS rows with the articles, so
-        // the index never goes stale.
-        let arts: i64 = conn
-            .query_row("SELECT COUNT(*) FROM articles", [], |r| r.get(0))
-            .unwrap();
-        let fts: i64 = conn
-            .query_row("SELECT COUNT(*) FROM articles_fts", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(arts, fts, "FTS index stays in sync after a skip-rule delete");
-    }
-
-    #[test]
-    fn apply_rule_to_existing_scopes_to_one_feed() {
-        let (conn, _aid) = test_db();
-        let feed_a: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        let feed_b = insert_feed(
-            &conn,
-            "https://example.com/b.xml",
-            None,
-            "Feed B",
-            None,
-            SourceType::Rss,
-            None,
-        )
-        .unwrap();
-        seed(&conn, feed_a, "x1", "Deals everywhere");
-        seed(&conn, feed_b, "x2", "Deals galore");
-
-        // Scoped to feed B only: feed A's match is left untouched.
-        let n = apply_rule_to_existing(&conn, Some(feed_b), "title", "deals", "star").unwrap();
-        assert_eq!(n, 1);
-        let starred_in_a: i64 = conn
-            .query_row(
-                "SELECT COUNT(*) FROM articles WHERE is_starred = 1 AND feed_id = ?1",
-                params![feed_a],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(starred_in_a, 0, "a feed-scoped rule must not touch other feeds");
-    }
-
     // ── retention cleanup ────────────────────────────────────────────
 
     /// Insert a read article with an explicit RFC 3339 `published_at`, the
@@ -2697,7 +2070,7 @@ mod tests {
             published_at: Some(rfc3339.into()),
             enclosures: Vec::new(),
         };
-        upsert_article(conn, feed_id, &a, false, &[]).unwrap();
+        upsert_article(conn, feed_id, &a, false).unwrap();
         conn.execute(
             "UPDATE articles SET is_read = 1 WHERE guid = ?1",
             params![guid],
@@ -2855,7 +2228,7 @@ mod tests {
             enclosures: Vec::new(),
         };
         assert!(
-            !upsert_article(&conn, feed_id, &refetched, false, &[]).unwrap(),
+            !upsert_article(&conn, feed_id, &refetched, false).unwrap(),
             "a retention-purged article must not be re-ingested as new"
         );
         assert_eq!(
@@ -2903,7 +2276,7 @@ mod tests {
             enclosures: Vec::new(),
         };
         assert!(
-            upsert_article(&conn, feed_b, &a, false, &[]).unwrap(),
+            upsert_article(&conn, feed_b, &a, false).unwrap(),
             "the same guid under a different feed is not tombstoned"
         );
     }
@@ -2950,7 +2323,7 @@ mod tests {
             published_at: None,
             enclosures: Vec::new(),
         };
-        upsert_article(&conn, feed_id, &dateless, false, &[]).unwrap();
+        upsert_article(&conn, feed_id, &dateless, false).unwrap();
         conn.execute(
             "UPDATE articles SET fetched_at = '2024-01-15 12:00:00' WHERE guid = 'dateless'",
             [],

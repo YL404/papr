@@ -12,10 +12,6 @@ import type {
   Feed,
   Folder,
   RefreshProgress,
-  Rule,
-  RuleAction,
-  RuleField,
-  RulePreview,
   SmartCounts,
   Tag,
   TranslateEvent,
@@ -223,50 +219,6 @@ export const reorderTags = (ids: number[]) =>
   invoke<void>("reorder_tags", { ids });
 export const setArticleTag = (articleId: number, tagId: number, on: boolean) =>
   invoke<void>("set_article_tag", { articleId, tagId, on });
-
-// ── filter rules ──
-export const listRules = () => invoke<Rule[]>("list_rules");
-export const createRule = (
-  name: string,
-  feedId: number | null,
-  field: RuleField,
-  query: string,
-  action: RuleAction,
-) => invoke<number>("create_rule", { name, feedId, field, query, action });
-export const updateRule = (
-  id: number,
-  name: string,
-  enabled: boolean,
-  feedId: number | null,
-  field: RuleField,
-  query: string,
-  action: RuleAction,
-) =>
-  invoke<void>("update_rule", {
-    id,
-    name,
-    enabled,
-    feedId,
-    field,
-    query,
-    action,
-  });
-export const deleteRule = (id: number) => invoke<void>("delete_rule", { id });
-export const previewRule = (
-  feedId: number | null,
-  field: RuleField,
-  query: string,
-) => invoke<RulePreview>("preview_rule", { feedId, field, query });
-/** Apply a rule's action to the already-stored articles it matches; returns the
- *  number acted on. Run once after saving so the rule affects the existing
- *  backlog. A `skip` rule deletes its matches — confirm before calling. */
-export const applyRuleToExisting = (
-  feedId: number | null,
-  field: RuleField,
-  query: string,
-  action: RuleAction,
-) =>
-  invoke<number>("apply_rule_to_existing", { feedId, field, query, action });
 
 // ── in-app original-page view (issue #49) ──
 // A native child webview overlaid on the reading area. Bounds are logical

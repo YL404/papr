@@ -53,14 +53,13 @@ async fn upsert_articles(
     feed_id: i64,
     articles: &[db::NewArticle],
     dedup: bool,
-    rules: &[crate::models::Rule],
     label: &str,
 ) -> usize {
     let mut new_count = 0usize;
     for chunk in articles.chunks(64) {
         let conn = db.lock().await;
         for article in chunk {
-            match db::upsert_article(&conn, feed_id, article, dedup, rules) {
+            match db::upsert_article(&conn, feed_id, article, dedup) {
                 Ok(true) => new_count += 1,
                 Ok(false) => {}
                 Err(e) => log::warn!("{label} upsert failed (feed {feed_id}): {e}"),
@@ -119,7 +118,7 @@ pub async fn refresh_core(
     scope: RefreshScope,
     mut on_event: impl FnMut(RefreshProgress),
 ) -> AppResult<RefreshSummary> {
-    let (feeds, concurrency, dedup, rules) = {
+    let (feeds, concurrency, dedup) = {
         let conn = db.lock().await;
         // The global default interval for feeds without a per-feed override.
         let global_min = db::get_setting(&conn, "refresh_interval_min")
@@ -138,8 +137,7 @@ pub async fn refresh_core(
         let concurrency =
             db::setting_parsed::<i64>(&conn, "net_concurrency", 6).clamp(1, 16) as usize;
         let dedup = db::setting_flag(&conn, "dedup_enabled", false);
-        let rules = db::active_rules(&conn).unwrap_or_default();
-        (feeds, concurrency, dedup, rules)
+        (feeds, concurrency, dedup)
     };
 
     // Nothing due this cycle: emit a no-op Started/Finished and bow out before
@@ -193,7 +191,7 @@ pub async fn refresh_core(
                 last_modified,
             } => {
                 new_here +=
-                    upsert_articles(db, feed_id, &parsed.articles, dedup, &rules, "rss").await;
+                    upsert_articles(db, feed_id, &parsed.articles, dedup, "rss").await;
                 let conn = db.lock().await;
                 let _ = db::update_feed_meta(
                     &conn,

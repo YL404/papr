@@ -49,7 +49,6 @@ papr extract <id>                  # fetch & store the cleaned full text of an a
 ```sh
 papr tags | papr tag add <tag_id> <article_id> | papr tag create "<name>"
 papr folders | papr folder create "<name>" | papr feed move <id> --folder <id>
-papr rules | papr rule create "<name>" "<keywords>" --action star
 papr opml import <file> | papr opml export
 papr settings get <key> | papr settings set <key> <value>
 papr stats
@@ -66,7 +65,7 @@ the exact command to re-run:
 ```sh
 papr unsubscribe <id> --yes            # delete a feed and its articles
 papr admin cleanup <days> --yes        # also: admin vacuum / admin reset
-papr folder delete <id> --yes          # likewise tag/rule delete
+papr folder delete <id> --yes          # likewise tag delete
 ```
 
 ## Notes

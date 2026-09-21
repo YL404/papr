@@ -60,7 +60,7 @@ export function useArticleActions(onError?: (msg: string) => void) {
 
   // The query keys an article-state change can affect. A bare
   // `invalidateQueries()` would also refetch unrelated caches (AI summaries,
-  // settings, FreshRSS status, rules, the feed-discovery search), so callers
+  // settings, the feed-discovery search), so callers
   // invalidate only these — plus any `extra` keys.
   const refreshArticleKeys = (extra: string[][] = []) => {
     const keys = [
