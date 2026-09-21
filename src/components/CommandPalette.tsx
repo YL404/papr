@@ -15,7 +15,7 @@ export type CommandAction =
   | "mark-all-read"
   | "toggle-theme"
   | "toggle-focus"
-  | "toggle-ai"
+  | "ai-summary"
   | "refresh"
   | "add-feed"
   | "new-folder"
@@ -44,7 +44,7 @@ const ACTIONS: { icon: IconName; labelKey: string; hint: string; action: Command
   { icon: "check-all", labelKey: "commandPalette.actionMarkAllRead", hint: "⇧A", action: "mark-all-read" },
   { icon: "globe", labelKey: "commandPalette.actionToggleTheme", hint: "⇧D", action: "toggle-theme" },
   { icon: "focus", labelKey: "commandPalette.actionToggleFocus", hint: "F", action: "toggle-focus" },
-  { icon: "sparkle", labelKey: "commandPalette.actionToggleAi", hint: "I", action: "toggle-ai" },
+  { icon: "sparkle", labelKey: "commandPalette.actionToggleAi", hint: "I", action: "ai-summary" },
   { icon: "refresh", labelKey: "commandPalette.actionRefresh", hint: modCombo("R"), action: "refresh" },
   { icon: "plus", labelKey: "commandPalette.actionAddFeed", hint: "A", action: "add-feed" },
   { icon: "folder", labelKey: "commandPalette.actionNewFolder", hint: "", action: "new-folder" },
@@ -60,10 +60,10 @@ export default function CommandPalette({
   onNavigateArticle,
 }: Props) {
   const { t } = useTranslation();
-  // The "Toggle AI summary" action only does anything while an article is
-  // open (its handler in App.tsx no-ops otherwise). Listing it unconditionally
-  // would let the user pick a command that silently does nothing — so hide it
-  // when there is no article to summarise.
+  // The "AI summary" action only does anything while an article is open (its
+  // handler in App.tsx no-ops otherwise). Listing it unconditionally would let
+  // the user pick a command that silently does nothing — so hide it when there
+  // is no article to summarise.
   const hasArticle = useUi((s) => s.selectedArticleId != null);
   const [query, setQuery] = useState("");
   const [debounced, setDebounced] = useState("");
@@ -119,7 +119,7 @@ export default function CommandPalette({
 
     for (const a of ACTIONS) {
       // Skip article-scoped actions when nothing is open — they would no-op.
-      if (a.action === "toggle-ai" && !hasArticle) continue;
+      if (a.action === "ai-summary" && !hasArticle) continue;
       const label = t(a.labelKey);
       if (q && !label.toLowerCase().includes(q)) continue;
       out.push({

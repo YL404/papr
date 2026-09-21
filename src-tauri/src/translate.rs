@@ -29,18 +29,44 @@ pub fn language_name(code: &str) -> &'static str {
     }
 }
 
-/// Build the system prompt instructing the model to translate one batch of HTML
-/// into `target` while leaving the markup intact.
-pub fn translate_system_prompt(target: &str) -> String {
-    format!(
-        "You are a professional translator. Translate the text content of the \
-         HTML fragment into {target}.\n\n\
-         Rules:\n\
-         - Preserve every HTML tag, attribute, and the overall structure exactly.\n\
-         - Translate only human-readable text; do not translate code or URLs.\n\
-         - Keep images, links, and all other markup intact.\n\
-         - Output only the translated HTML fragment: no preamble, no code fences."
+/// The placeholder a prompt template uses to name the target language. Kept as
+/// a literal token (not a Rust format capture) so a template round-trips
+/// through the settings table unchanged.
+const TARGET_PLACEHOLDER: &str = "{target}";
+
+/// The built-in translation prompt *template*: a template rather than a
+/// finished prompt because the target language is substituted in per call.
+/// Settings → AI lets the user replace it wholesale.
+pub fn default_translate_prompt() -> String {
+    concat!(
+        "You are a professional translator. Translate the text content of the ",
+        "HTML fragment into {target}.\n\n",
+        "Rules:\n",
+        "- Preserve every HTML tag, attribute, and the overall structure exactly.\n",
+        "- Translate only human-readable text; do not translate code or URLs.\n",
+        "- Keep images, links, and all other markup intact.\n",
+        "- Output only the translated HTML fragment: no preamble, no code fences."
     )
+    .to_string()
+}
+
+/// Build the system prompt for one translation. `template` is the user's
+/// customized prompt (Settings → AI); blank means the built-in one.
+pub fn translate_system_prompt(template: &str, target: &str) -> String {
+    let prompt = if template.trim().is_empty() {
+        default_translate_prompt()
+    } else {
+        template.to_string()
+    };
+    // A template that dropped the placeholder leaves the model with no target
+    // language at all — it would guess, usually the prompt's own language.
+    // Append the instruction so the language is always named.
+    let prompt = if prompt.contains(TARGET_PLACEHOLDER) {
+        prompt
+    } else {
+        format!("{prompt}\n\nTranslate the text into {{target}}.")
+    };
+    prompt.replace(TARGET_PLACEHOLDER, target)
 }
 
 /// Split source body HTML into batches of whole top-level blocks, each at most
@@ -660,16 +686,41 @@ mod tests {
 
     #[test]
     fn prompt_names_the_target_language() {
-        let p = translate_system_prompt("Simplified Chinese");
+        let p = translate_system_prompt("", "Simplified Chinese");
         assert!(p.contains("Simplified Chinese"), "missing language: {p}");
     }
 
     #[test]
     fn prompt_demands_html_be_preserved() {
-        let p = translate_system_prompt("Japanese");
+        let p = translate_system_prompt("", "Japanese");
         let lower = p.to_lowercase();
         assert!(lower.contains("html"), "no HTML mention: {p}");
         assert!(lower.contains("preserve") || lower.contains("keep"), "no preserve directive: {p}");
+    }
+
+    #[test]
+    fn default_template_carries_the_placeholder() {
+        assert!(default_translate_prompt().contains("{target}"));
+    }
+
+    #[test]
+    fn custom_template_is_used_and_target_substituted() {
+        let p = translate_system_prompt("Translate into {target}, tersely.", "Japanese");
+        assert_eq!(p, "Translate into Japanese, tersely.");
+    }
+
+    #[test]
+    fn blank_template_falls_back_to_the_default() {
+        let fallback = translate_system_prompt("", "English");
+        assert_eq!(translate_system_prompt("   \n ", "English"), fallback);
+        assert!(fallback.contains("professional translator"), "not the default: {fallback}");
+    }
+
+    #[test]
+    fn template_without_placeholder_still_names_the_target() {
+        let p = translate_system_prompt("Translate this.", "Japanese");
+        assert!(p.starts_with("Translate this."), "template not kept: {p}");
+        assert!(p.contains("Japanese"), "target not named: {p}");
     }
 
     // ── strip_code_fence ────────────────────────────────────────────────

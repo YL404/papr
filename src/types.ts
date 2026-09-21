@@ -144,6 +144,13 @@ export interface ArticleDetail {
   isStarred: boolean;
   readLater: boolean;
   aiSummary: string | null;
+  /** Provenance of the stored summary, shown under it in the reader. All
+   *  `null` for summaries generated before these were recorded. */
+  aiSummaryModel: string | null;
+  /** How long the summary took to generate, in milliseconds. */
+  aiSummaryMs: number | null;
+  /** Total tokens (input + output); `null` when the provider reported none. */
+  aiSummaryTokens: number | null;
   /** Cached translated body HTML, if a translation has been generated. */
   translatedHtml: string | null;
   /** The target language code the cached translation was produced for. */
@@ -184,7 +191,9 @@ export type ArticleQuery =
 export type AiEvent =
   | { type: "delta"; data: string }
   | { type: "done" }
-  | { type: "error"; data: string };
+  /** Coded failure, shaped like the Rust `AppError` — resolve it with
+   *  `errorText()` so the message is localized. */
+  | { type: "error"; data: { code: string; detail?: string | null } };
 
 /** Batch-level translation progress (mirrors commands::TranslateEvent). */
 export type TranslateEvent =

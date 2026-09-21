@@ -14,6 +14,7 @@ use crate::scheduler;
 use crate::opml;
 use crate::sanitize;
 use crate::state::AppState;
+use crate::summary;
 use crate::translate;
 use serde::{Deserialize, Serialize};
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager, State};
@@ -682,7 +683,9 @@ async fn stream_to_channel(
             let _ = on_token.send(AiEvent::Done);
         }
         Err(e) => {
-            let _ = on_token.send(AiEvent::Error(e.to_string()));
+            // Carry the coded shape so the frontend localizes it with its
+            // `error.<code>` lookup rather than showing a raw Rust string.
+            let _ = on_token.send(AiEvent::Error(ai::AiError::from_app_error(e)));
         }
     }
     result
@@ -733,6 +736,56 @@ fn translate_target_lang(conn: &rusqlite::Connection) -> String {
         .unwrap_or_else(|| "en".to_string())
 }
 
+/// The user's translation prompt template (Settings → AI), empty when unset —
+/// `translate::translate_system_prompt` falls back to the built-in prompt.
+fn translate_prompt(conn: &rusqlite::Connection) -> String {
+    db::get_setting(conn, "translate_prompt")
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// The built-in translation prompt template, so Settings can show the current
+/// effective prompt — and offer restoring it — without a second copy in the
+/// frontend.
+#[tauri::command]
+pub fn default_translate_prompt() -> String {
+    translate::default_translate_prompt()
+}
+
+/// The selected summary prompt preset (Settings → AI): one of
+/// `summary::presets()` ids, or `summary::CUSTOM_PRESET` for the user's own
+/// template. Falls back to the default preset when unset or unknown.
+fn summary_preset(conn: &rusqlite::Connection) -> String {
+    db::get_setting(conn, "summary_preset")
+        .ok()
+        .flatten()
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| summary::DEFAULT_PRESET.to_string())
+}
+
+/// The user's AI-summary prompt template (Settings → AI), empty when unset —
+/// `summary::system_prompt` then uses the selected preset.
+fn summary_prompt(conn: &rusqlite::Connection) -> String {
+    db::get_setting(conn, "summary_prompt")
+        .ok()
+        .flatten()
+        .unwrap_or_default()
+}
+
+/// The selectable built-in summary templates, so Settings can list them and
+/// preview their text without a second copy in the frontend.
+#[tauri::command]
+pub fn summary_presets() -> Vec<SummaryPreset> {
+    summary::presets()
+        .into_iter()
+        .map(|p| SummaryPreset {
+            id: p.id.to_string(),
+            template: p.template,
+        })
+        .collect()
+}
+
 /// Stream an AI summary of one article; the full summary is also persisted.
 #[tauri::command]
 pub async fn ai_summarize(
@@ -740,10 +793,17 @@ pub async fn ai_summarize(
     article_id: i64,
     on_token: Channel<AiEvent>,
 ) -> AppResult<()> {
-    let (title, body, cfg, lang) = {
+    let (title, body, cfg, lang, preset, prompt) = {
         let conn = state.read().await;
         let (title, body) = db::article_text(&conn, article_id)?;
-        (title, body, load_ai_config(&conn)?, response_language(&conn))
+        (
+            title,
+            body,
+            load_ai_config(&conn)?,
+            response_language(&conn),
+            summary_preset(&conn),
+            summary_prompt(&conn),
+        )
     };
     // A title-only item (link-aggregator posts, some podcast/video feeds carry
     // no body text) gives the model nothing to summarize. Without this guard it
@@ -753,31 +813,33 @@ pub async fn ai_summarize(
     if body.trim().is_empty() {
         return Err(AppError::code("noArticleBody"));
     }
-    // The drawer renders the response as markdown (.ai-prose styles paragraphs,
-    // bullets, and bold), so we ask for structured output instead of a single
-    // dense paragraph — the reader can scan a TL;DR + bullets far faster.
-    let system = format!(
-        "You are a sharp news editor. Summarize the article so a reader can \
-         decide whether to read it in full.\n\n\
-         Format the response in markdown using exactly this shape:\n\
-         **TL;DR** — One sentence capturing the single most important point.\n\n\
-         - Key fact, finding, or claim (under ~20 words)\n\
-         - Another key point\n\
-         - 3 to 5 bullets total, one idea each, no nested bullets\n\n\
-         Output only this structure. No preamble, no closing remarks, no \
-         section headers, no extra prose.{lang}"
-    );
+    // The built-in prompts ask for a structured lead-sentence + bullets shape
+    // (the reader renders the response as markdown); Settings → AI picks one or
+    // replaces it wholesale. The response-language directive is substituted in
+    // per call.
+    let system = summary::system_prompt(&preset, &prompt, lang);
     let user = format!("Title: {title}\n\n{}", truncate(&body, 8000));
 
     let http = state.http();
+    let started = std::time::Instant::now();
     let outcome = stream_to_channel(&http, &cfg, &system, &user, &on_token, ai::MAX_TOKENS).await?;
-    // Persist only a summary that streamed to completion. If the user closed
-    // the AI panel mid-stream the channel was dropped and `outcome.text` holds
-    // just a truncated fragment — caching that would make the next open show a
+    // Persist only a summary that streamed to completion. If the user switched
+    // articles mid-stream the channel was dropped and `outcome.text` holds just
+    // a truncated fragment — caching that would make the next open show a
     // broken half-summary with no way to regenerate it.
     if outcome.completed && !outcome.text.trim().is_empty() {
         let conn = state.db.lock().await;
-        db::set_ai_summary(&conn, article_id, outcome.text.trim())?;
+        // Provenance for the reader's footer: the model that actually answered
+        // (after defaults), how long it took, and the tokens it cost. `None`
+        // when the provider reported no usage.
+        db::set_ai_summary(
+            &conn,
+            article_id,
+            outcome.text.trim(),
+            cfg.model(),
+            started.elapsed().as_millis() as i64,
+            outcome.usage.map(|u| u.total() as i64),
+        )?;
     }
     Ok(())
 }
@@ -889,6 +951,15 @@ pub struct ArticlePreviewTranslation {
     engine: String,
 }
 
+/// A selectable built-in AI-summary prompt template. `id` is the stable key the
+/// `summary_preset` setting stores; the frontend localizes the display name.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SummaryPreset {
+    id: String,
+    template: String,
+}
+
 fn escape_preview_text(s: &str) -> String {
     s.replace('&', "&amp;")
         .replace('<', "&lt;")
@@ -932,7 +1003,7 @@ pub async fn translate_article_preview(
     } else {
         engine
     };
-    let (title, snippet, sel, target) = {
+    let (title, snippet, sel, target, prompt) = {
         let conn = state.read().await;
         let target = if lang.trim().is_empty() {
             translate_target_lang(&conn)
@@ -956,6 +1027,7 @@ pub async fn translate_article_preview(
             truncate(body.trim(), db::PREVIEW_SNIPPET_CHARS),
             build_translate_selection(&conn, &engine)?,
             target,
+            translate_prompt(&conn),
         )
     };
     if title.trim().is_empty() && snippet.trim().is_empty() {
@@ -967,7 +1039,7 @@ pub async fn translate_article_preview(
     // Reuse the reader's canonical translation prompt rather than a second copy:
     // the preview fragment is just an `<h1>`/`<p>` pair, so "preserve every HTML
     // tag" covers it, and a single prompt can never drift between the two paths.
-    let system = translate::translate_system_prompt(translate::language_name(&target));
+    let system = translate::translate_system_prompt(&prompt, translate::language_name(&target));
     let source = preview_translation_html(&title, &snippet);
     let raw = backend.translate_batch(&http, &system, &source, &target).await?;
     let clean = sanitize::sanitize(raw.trim(), None);
@@ -1020,7 +1092,7 @@ pub async fn ai_translate(
     engine: String,
     on_event: Channel<TranslateEvent>,
 ) -> AppResult<()> {
-    let (source_html, sel, target) = {
+    let (source_html, sel, target, prompt) = {
         let conn = state.read().await;
         let detail = db::get_article(&conn, article_id)?;
         // Translate the richest body available: the extracted full text when the
@@ -1037,7 +1109,12 @@ pub async fn ai_translate(
         } else {
             lang
         };
-        (source, build_translate_selection(&conn, &engine)?, target)
+        (
+            source,
+            build_translate_selection(&conn, &engine)?,
+            target,
+            translate_prompt(&conn),
+        )
     };
     if source_html.trim().is_empty() {
         return Err(AppError::code("noArticleBody"));
@@ -1055,7 +1132,7 @@ pub async fn ai_translate(
     let total = batches.len();
     let _ = on_event.send(TranslateEvent::Start { total });
 
-    let system = translate::translate_system_prompt(translate::language_name(&target));
+    let system = translate::translate_system_prompt(&prompt, translate::language_name(&target));
     let mut full = String::new();
     for (i, batch) in batches.iter().enumerate() {
         let raw = backend.translate_batch(&http, &system, batch, &target).await?;

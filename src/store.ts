@@ -63,13 +63,12 @@ export const READER_BOUNDS = {
 
 /** Valid ranges for the draggable pane widths — shared by the resize handles,
  *  persistence validation, and the `setPanel` write guard so all stay in
- *  lockstep (mirrors `READER_BOUNDS`). The article-list column and the AI
- *  drawer can grow wide, but never so far they crowd out the reader; the
- *  sidebar stays a navigation rail. */
+ *  lockstep (mirrors `READER_BOUNDS`). The article-list column can grow wide,
+ *  but never so far it crowds out the reader; the sidebar stays a navigation
+ *  rail. */
 export const PANEL_BOUNDS = {
   sidebar: { min: 200, max: 420 },
   list: { min: 300, max: 560 },
-  ai: { min: 280, max: 560 },
 } as const;
 
 /** Clamp `n` into `[min, max]`. */
@@ -161,14 +160,17 @@ interface UiState {
   // draggable pane widths (px)
   sidebarWidth: number;
   listWidth: number;
-  aiWidth: number;
 
   // behavioural preferences
   prefs: Prefs;
 
   // transient view modes
   focusMode: boolean;
-  aiOpen: boolean;
+  /** Bumped to ask the reader to generate an AI summary for the open article
+   *  (the I shortcut, the command palette, the reader's context menu). The
+   *  summary itself is an inline section at the top of the article that owns
+   *  the generation — this is only the "please run it" signal. */
+  aiSummaryRequest: number;
   /** A covering modal (subscribe / settings / explore …) is open. The reader's
    *  original-page view is a native child webview that floats above the whole
    *  DOM — including modals — so it must be torn down while one is up, or it
@@ -192,12 +194,12 @@ interface UiState {
   setViewMode: (v: ViewMode) => void;
   setReaderFont: (v: ReaderFont) => void;
   setReader: (p: Partial<Pick<UiState, "readerSize" | "readerLeading" | "readerWidth">>) => void;
-  setPanel: (p: Partial<Pick<UiState, "sidebarWidth" | "listWidth" | "aiWidth">>) => void;
+  setPanel: (p: Partial<Pick<UiState, "sidebarWidth" | "listWidth">>) => void;
 
   setPref: (patch: Partial<Prefs>) => void;
 
   setFocusMode: (v: boolean) => void;
-  setAiOpen: (v: boolean) => void;
+  requestAiSummary: () => void;
   setModalOpen: (v: boolean) => void;
   setMenuOpen: (v: boolean) => void;
 }
@@ -310,12 +312,11 @@ export const useUi = create<UiState>((set, get) => ({
 
   sidebarWidth: ls.num("sidebarWidth", 248, PANEL_BOUNDS.sidebar.min, PANEL_BOUNDS.sidebar.max),
   listWidth: ls.num("listWidth", 388, PANEL_BOUNDS.list.min, PANEL_BOUNDS.list.max),
-  aiWidth: ls.num("aiWidth", 360, PANEL_BOUNDS.ai.min, PANEL_BOUNDS.ai.max),
 
   prefs: loadPrefs(),
 
   focusMode: false,
-  aiOpen: false,
+  aiSummaryRequest: 0,
   modalOpen: false,
   menuOpen: false,
 
@@ -363,7 +364,7 @@ export const useUi = create<UiState>((set, get) => ({
     // Clamp on write so neither a drag past the handle's guard nor a stale
     // persisted value (from an older build with different limits) can push an
     // out-of-range width into the store or its `--col-*` CSS variable.
-    const next: Partial<Pick<UiState, "sidebarWidth" | "listWidth" | "aiWidth">> = {};
+    const next: Partial<Pick<UiState, "sidebarWidth" | "listWidth">> = {};
     if (p.sidebarWidth != null) {
       next.sidebarWidth = clamp(p.sidebarWidth, PANEL_BOUNDS.sidebar.min, PANEL_BOUNDS.sidebar.max);
       ls.set("sidebarWidth", next.sidebarWidth);
@@ -371,10 +372,6 @@ export const useUi = create<UiState>((set, get) => ({
     if (p.listWidth != null) {
       next.listWidth = clamp(p.listWidth, PANEL_BOUNDS.list.min, PANEL_BOUNDS.list.max);
       ls.set("listWidth", next.listWidth);
-    }
-    if (p.aiWidth != null) {
-      next.aiWidth = clamp(p.aiWidth, PANEL_BOUNDS.ai.min, PANEL_BOUNDS.ai.max);
-      ls.set("aiWidth", next.aiWidth);
     }
     set(next);
   },
@@ -387,7 +384,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
 
   setFocusMode: (focusMode) => set({ focusMode }),
-  setAiOpen: (aiOpen) => set({ aiOpen }),
+  requestAiSummary: () =>
+    set((s) => ({ aiSummaryRequest: s.aiSummaryRequest + 1 })),
   setModalOpen: (modalOpen) => set({ modalOpen }),
   setMenuOpen: (menuOpen) => set({ menuOpen }),
 }));

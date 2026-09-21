@@ -38,6 +38,7 @@ const SECTIONS: { id: string; labelKey: string; icon: IconName }[] = [
   { id: "sync", labelKey: "settings.nav.sync", icon: "refresh" },
   { id: "shortcuts", labelKey: "settings.nav.shortcuts", icon: "command" },
   { id: "notifications", labelKey: "settings.nav.notifications", icon: "inbox" },
+  { id: "ai", labelKey: "settings.nav.ai", icon: "sparkle-fill" },
   { id: "advanced", labelKey: "settings.nav.advanced", icon: "sort" },
   { id: "about", labelKey: "settings.nav.about", icon: "sparkle" },
 ];
@@ -98,6 +99,7 @@ export default function SettingsDialog({
     sync: t("settings.sub.sync"),
     shortcuts: t("settings.sub.shortcuts"),
     notifications: t("settings.sub.notifications"),
+    ai: t("settings.sub.ai"),
     advanced: t("settings.sub.advanced"),
     about: t("settings.sub.about"),
   };
@@ -165,6 +167,7 @@ export default function SettingsDialog({
             {section === "sync" && <SyncSection onToast={onToast} />}
             {section === "shortcuts" && <ShortcutsSection />}
             {section === "notifications" && <NotificationsSection />}
+            {section === "ai" && <AiSettingsGroup onToast={onToast} />}
             {section === "advanced" && <AdvancedSection onToast={onToast} />}
             {section === "about" && <AboutSection />}
           </div>
@@ -414,6 +417,209 @@ function LaunchAtLogin() {
     >
       <Toggle checked={on} onChange={change} />
     </Row>
+  );
+}
+
+/** Editor for a user-editable prompt template (Settings → AI). The field shows
+ *  the *effective* prompt — the user's own template when one is stored, else
+ *  the built-in one fetched from the backend — so it doubles as a read-out of
+ *  what is currently sent to the model. Text identical to the built-in prompt
+ *  is stored as "" (unset), which keeps the default tracking future app
+ *  versions and makes "restore default" just "show the default, then commit". */
+function PromptEditor({
+  settingKey,
+  loadBuiltin,
+  label,
+  desc,
+  resetLabel,
+  onToast,
+}: {
+  settingKey: string;
+  loadBuiltin: () => Promise<string>;
+  label: string;
+  desc: string;
+  resetLabel: string;
+  onToast: (msg: string) => void;
+}) {
+  const { t } = useTranslation();
+  const [text, setText] = useState("");
+  const [builtin, setBuiltin] = useState("");
+  // The stored template ("" = unset), so a blur that changed nothing writes
+  // nothing.
+  const saved = useRef("");
+
+  useEffect(() => {
+    Promise.all([api.getSetting(settingKey), loadBuiltin()])
+      .then(([stored, dflt]) => {
+        setBuiltin(dflt);
+        saved.current = stored ?? "";
+        setText(saved.current.trim() ? saved.current : dflt);
+      })
+      .catch(() => {});
+  }, [settingKey, loadBuiltin]);
+
+  const commit = (value: string) => {
+    const stored = value.trim() === builtin.trim() ? "" : value.trim();
+    if (stored === saved.current) return;
+    saved.current = stored;
+    api
+      .setSetting(settingKey, stored)
+      .then(() => onToast(t("settings.ai.aiSaved", { label })))
+      .catch((e) => reportError(e));
+  };
+
+  return (
+    <div className="settings-prompt">
+      <div className="settings-row-text">
+        <div className="settings-row-label">{label}</div>
+        <div className="settings-row-desc">{desc}</div>
+      </div>
+      <textarea
+        className="s-textarea"
+        {...NO_AUTOCORRECT}
+        rows={9}
+        value={text}
+        aria-label={label}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => commit(text)}
+      />
+      <div className="settings-prompt-foot">
+        <button
+          className="s-btn"
+          onClick={() => {
+            setText(builtin);
+            commit(builtin);
+          }}
+          disabled={text.trim() === builtin.trim()}
+        >
+          {resetLabel}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** The selection shown before the stored value loads — mirrors
+ *  `summary::DEFAULT_PRESET` on the backend. */
+const DEFAULT_SUMMARY_PRESET = "general";
+
+/** Display names for the built-in summary presets, keyed by the preset id the
+ *  backend ships. The backend owns the templates; the frontend owns the
+ *  localized labels. An id missing here falls back to the raw id, so a preset
+ *  added by a newer backend still lists. */
+const SUMMARY_PRESET_LABELS: Record<string, string> = {
+  general: "settings.ai.presetGeneral",
+  brief: "settings.ai.presetBrief",
+  deep: "settings.ai.presetDeep",
+};
+
+/** The AI-summary prompt: a picker over the built-in presets (shown read-only)
+ *  plus a Custom option whose text is editable. A custom template with nothing
+ *  stored shows — and the backend applies — the "general" preset's text, so
+ *  switching to Custom without editing behaves exactly like General. */
+function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
+  const { t } = useTranslation();
+  const [presets, setPresets] = useState<{ id: string; template: string }[]>(
+    [],
+  );
+  const [preset, setPreset] = useState(DEFAULT_SUMMARY_PRESET);
+  const [custom, setCustom] = useState("");
+  // The stored custom template ("" = unset), so a blur that changed nothing
+  // writes nothing.
+  const savedCustom = useRef("");
+
+  useEffect(() => {
+    Promise.all([
+      api.getSetting("summary_preset"),
+      api.getSetting("summary_prompt"),
+      api.summaryPresets(),
+    ])
+      .then(([p, c, list]) => {
+        setPresets(list);
+        setPreset(p && p.trim() ? p : DEFAULT_SUMMARY_PRESET);
+        savedCustom.current = c ?? "";
+        setCustom(savedCustom.current);
+      })
+      .catch(() => {});
+  }, []);
+
+  const general = presets.find((p) => p.id === DEFAULT_SUMMARY_PRESET)?.template ?? "";
+  const isCustom = preset === "custom";
+  // What the field shows: the custom template when Custom is selected, else the
+  // selected preset's. A blank custom template shows General's text — the same
+  // fallback the backend applies.
+  const shown = isCustom
+    ? custom.trim() || general
+    : presets.find((p) => p.id === preset)?.template ?? general;
+
+  // Text identical to the General preset is stored as "" (unset), which keeps
+  // the seed tracking future preset changes and makes "restore default" just
+  // "show General, then commit".
+  const commit = (value: string) => {
+    const stored = value.trim() === general.trim() ? "" : value.trim();
+    if (stored === savedCustom.current) return;
+    savedCustom.current = stored;
+    api
+      .setSetting("summary_prompt", stored)
+      .then(() =>
+        onToast(t("settings.ai.aiSaved", { label: t("settings.ai.summaryPrompt") })),
+      )
+      .catch((e) => reportError(e));
+  };
+
+  return (
+    <div className="settings-prompt">
+      <div className="settings-row-text">
+        <div className="settings-row-label">{t("settings.ai.summaryPrompt")}</div>
+        <div className="settings-row-desc">
+          {t("settings.ai.summaryPromptDesc")}
+        </div>
+      </div>
+      <div className="settings-prompt-controls">
+        <Select
+          value={preset}
+          options={[
+            ...presets.map((p) => ({
+              value: p.id,
+              label: t(SUMMARY_PRESET_LABELS[p.id] ?? p.id),
+            })),
+            { value: "custom", label: t("settings.ai.presetCustom") },
+          ]}
+          aria-label={t("settings.ai.summaryPrompt")}
+          onChange={(id) => {
+            setPreset(id);
+            api.setSetting("summary_preset", id).catch((e) => reportError(e));
+          }}
+        />
+        {isCustom && (
+          <button
+            className="s-btn"
+            onClick={() => {
+              setCustom(general);
+              commit(general);
+            }}
+            disabled={custom.trim() === general.trim()}
+          >
+            {t("settings.ai.summaryPromptReset")}
+          </button>
+        )}
+      </div>
+      <textarea
+        className="s-textarea"
+        {...NO_AUTOCORRECT}
+        rows={9}
+        readOnly={!isCustom}
+        value={shown}
+        aria-label={t("settings.ai.summaryPrompt")}
+        onChange={(e) => setCustom(e.target.value)}
+        onBlur={() => isCustom && commit(custom)}
+      />
+      {!isCustom && (
+        <div className="settings-prompt-hint">
+          {t("settings.ai.presetReadOnly")}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1348,7 +1554,6 @@ function AdvancedSection({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   return (
     <>
-      <AiSettingsGroup onToast={onToast} />
       <StorageGroup onToast={onToast} />
       <NetworkGroup onToast={onToast} />
       <div className="settings-group">
@@ -1717,16 +1922,16 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
   const save = (key: string, value: string, label: string) => {
     api
       .setSetting(key, value)
-      .then(() => onToast(t("settings.advanced.aiSaved", { label })))
+      .then(() => onToast(t("settings.ai.aiSaved", { label })))
       .catch((e) => reportError(e));
   };
 
   const placeholder =
     provider === "openai"
-      ? t("settings.advanced.aiModelPlaceholderOpenai")
+      ? t("settings.ai.aiModelPlaceholderOpenai")
       : provider === "deepseek"
-        ? t("settings.advanced.aiModelPlaceholderDeepseek")
-        : t("settings.advanced.aiModelPlaceholderAnthropic");
+        ? t("settings.ai.aiModelPlaceholderDeepseek")
+        : t("settings.ai.aiModelPlaceholderAnthropic");
 
   const baseUrlPlaceholder =
     provider === "openai"
@@ -1737,10 +1942,10 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
 
   return (
     <div className="settings-group">
-      <h3 className="settings-group-title">{t("settings.advanced.aiSummary")}</h3>
+      <h3 className="settings-group-title">{t("settings.ai.aiSummary")}</h3>
       <Row
-        label={t("settings.advanced.aiProvider")}
-        desc={t("settings.advanced.aiProviderDesc")}
+        label={t("settings.ai.aiProvider")}
+        desc={t("settings.ai.aiProviderDesc")}
       >
         <Select
           value={provider}
@@ -1765,8 +1970,8 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
             ])
               .then(() =>
                 onToast(
-                  t("settings.advanced.aiSaved", {
-                    label: t("settings.advanced.aiProviderLabel"),
+                  t("settings.ai.aiSaved", {
+                    label: t("settings.ai.aiProviderLabel"),
                   }),
                 ),
               )
@@ -1775,8 +1980,8 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
         />
       </Row>
       <Row
-        label={t("settings.advanced.aiApiKey")}
-        desc={t("settings.advanced.aiApiKeyDesc")}
+        label={t("settings.ai.aiApiKey")}
+        desc={t("settings.ai.aiApiKeyDesc")}
       >
         <input
           className="s-text-input"
@@ -1792,14 +1997,14 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
             if (trimmed !== apiKey) setApiKey(trimmed);
             if (trimmed !== savedKey.current) {
               savedKey.current = trimmed;
-              save("ai_api_key", trimmed, t("settings.advanced.aiApiKeyLabel"));
+              save("ai_api_key", trimmed, t("settings.ai.aiApiKeyLabel"));
             }
           }}
         />
       </Row>
       <Row
-        label={t("settings.advanced.aiModel")}
-        desc={t("settings.advanced.aiModelDesc")}
+        label={t("settings.ai.aiModel")}
+        desc={t("settings.ai.aiModelDesc")}
       >
         <input
           className="s-text-input"
@@ -1815,14 +2020,14 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
             if (trimmed !== model) setModel(trimmed);
             if (trimmed !== savedModel.current) {
               savedModel.current = trimmed;
-              save("ai_model", trimmed, t("settings.advanced.aiModelLabel"));
+              save("ai_model", trimmed, t("settings.ai.aiModelLabel"));
             }
           }}
         />
       </Row>
       <Row
-        label={t("settings.advanced.aiBaseUrl")}
-        desc={t("settings.advanced.aiBaseUrlDesc")}
+        label={t("settings.ai.aiBaseUrl")}
+        desc={t("settings.ai.aiBaseUrlDesc")}
       >
         <input
           className="s-text-input"
@@ -1836,27 +2041,28 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
             if (trimmed !== baseUrl) setBaseUrl(trimmed);
             if (trimmed !== savedBaseUrl.current) {
               savedBaseUrl.current = trimmed;
-              save("ai_base_url", trimmed, t("settings.advanced.aiBaseUrlLabel"));
+              save("ai_base_url", trimmed, t("settings.ai.aiBaseUrlLabel"));
             }
           }}
         />
       </Row>
+      <SummaryPromptEditor onToast={onToast} />
       <Row
-        label={t("settings.advanced.translateEngine")}
-        desc={t("settings.advanced.translateEngineDesc")}
+        label={t("settings.ai.translateEngine")}
+        desc={t("settings.ai.translateEngineDesc")}
       >
         <Select
           value={engine}
           options={[
-            { value: "llm", label: t("settings.advanced.translateEngineLlm") },
+            { value: "llm", label: t("settings.ai.translateEngineLlm") },
             { value: "google", label: "Google" },
             { value: "deepl", label: "DeepL" },
             { value: "bing", label: "Bing" },
           ]}
-          aria-label={t("settings.advanced.translateEngine")}
+          aria-label={t("settings.ai.translateEngine")}
           onChange={(v) => {
             setEngine(v);
-            save("translate_engine", v, t("settings.advanced.translateEngineLabel"));
+            save("translate_engine", v, t("settings.ai.translateEngineLabel"));
             // The reader reads this default when starting a translation —
             // refresh it so the change takes effect on the next translate.
             qc.invalidateQueries({ queryKey: ["setting", "translate_engine"] });
@@ -1864,22 +2070,32 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
         />
       </Row>
       <Row
-        label={t("settings.advanced.translateLang")}
-        desc={t("settings.advanced.translateLangDesc")}
+        label={t("settings.ai.translateLang")}
+        desc={t("settings.ai.translateLangDesc")}
       >
         <Select
           value={translateLang || i18n.language}
           options={LANGUAGES.map((l) => ({ value: l.code, label: l.label }))}
-          aria-label={t("settings.advanced.translateLang")}
+          aria-label={t("settings.ai.translateLang")}
           onChange={(v) => {
             setTranslateLang(v);
-            save("translate_target_lang", v, t("settings.advanced.translateLangLabel"));
+            save("translate_target_lang", v, t("settings.ai.translateLangLabel"));
             // The reader caches this default to decide whether a stored
             // translation is still current — refresh it so a change applies now.
             qc.invalidateQueries({ queryKey: ["setting", "translate_target_lang"] });
           }}
         />
       </Row>
+      {/* Full-width multi-line field, so it sits outside the label-left /
+          control-right row layout. */}
+      <PromptEditor
+        settingKey="translate_prompt"
+        loadBuiltin={api.defaultTranslatePrompt}
+        label={t("settings.ai.translatePrompt")}
+        desc={t("settings.ai.translatePromptDesc")}
+        resetLabel={t("settings.ai.translatePromptReset")}
+        onToast={onToast}
+      />
     </div>
   );
 }

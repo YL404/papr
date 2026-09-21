@@ -67,7 +67,42 @@ const MAX_SSE_BUFFER: usize = 8 * 1024 * 1024;
 pub enum AiEvent {
     Delta(String),
     Done,
-    Error(String),
+    /// A failure, shaped like `AppError`'s serialized form so the frontend can
+    /// localize it with its existing `error.<code>` lookup instead of showing a
+    /// raw Rust string.
+    Error(AiError),
+}
+
+/// A failure on the [`AiEvent`] channel: the localizable code plus any inner
+/// detail to show verbatim.
+#[derive(Serialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct AiError {
+    pub code: String,
+    pub detail: Option<String>,
+}
+
+impl AiError {
+    pub fn from_app_error(e: &AppError) -> Self {
+        let (code, detail) = e.code_and_detail();
+        Self { code, detail }
+    }
+}
+
+/// Token counts for one completion, as reported by the provider. Optional
+/// end-to-end: a provider that reports no usage (a minimal OpenAI-compatible
+/// server, say) leaves it `None` rather than zero.
+#[derive(Serialize, Clone, Copy, Debug, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Usage {
+    pub input_tokens: u32,
+    pub output_tokens: u32,
+}
+
+impl Usage {
+    pub fn total(&self) -> u32 {
+        self.input_tokens + self.output_tokens
+    }
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -173,6 +208,8 @@ pub struct ChatOutcome {
     /// the channel mid-stream (the user closed the AI panel) — the text is then
     /// a truncated fragment that callers must not persist as a finished result.
     pub completed: bool,
+    /// Token usage, when the provider reported any.
+    pub usage: Option<Usage>,
 }
 
 /// Stream a single-turn chat completion, forwarding each token to `sink`.
@@ -256,6 +293,11 @@ async fn stream_openai(
         "model": cfg.model,
         "max_tokens": max_tokens,
         "stream": true,
+        // Ask for the usage report on the final chunk — without it an
+        // OpenAI-compatible stream carries no token counts at all. Servers
+        // that don't know the field ignore it; ones that reject unknown fields
+        // fail loudly here rather than silently losing the counts.
+        "stream_options": { "include_usage": true },
         "messages": [
             { "role": "system", "content": system },
             { "role": "user", "content": user },
@@ -283,11 +325,13 @@ enum LineOutcome {
 
 /// Process a single SSE line: pull the `data:` payload, surface any provider
 /// error, and forward a text delta to `channel` (appending it to `full`).
+/// Token usage found in the frame is merged into `usage`.
 fn handle_sse_line(
     line: &str,
     provider: Provider,
     full: &mut String,
     sink: &mut DeltaSink<'_>,
+    usage: &mut Option<Usage>,
 ) -> AppResult<LineOutcome> {
     let Some(data) = line.trim().strip_prefix("data:") else {
         return Ok(LineOutcome::Continue);
@@ -305,6 +349,7 @@ fn handle_sse_line(
     if let Some(msg) = extract_error(&value, provider) {
         return Err(AppError::other(format!("AI stream error: {msg}")));
     }
+    merge_usage(usage, &value, provider);
     if let Some(text) = extract_delta(&value, provider) {
         full.push_str(&text);
         // The sink returning `false` means the consumer went away (the desktop
@@ -319,6 +364,45 @@ fn handle_sse_line(
     Ok(LineOutcome::Continue)
 }
 
+/// Merge the token usage carried by one SSE frame into the running total.
+///
+/// Anthropic splits it across two frames — `message_start` carries the input
+/// count, `message_delta` the output count — so a single frame may fill in only
+/// half. The OpenAI-compatible shape puts both in one `usage` object on the
+/// final chunk (present only because the request asked for it).
+fn merge_usage(slot: &mut Option<Usage>, v: &Value, provider: Provider) {
+    match provider {
+        Provider::Anthropic => {
+            let n = match v["type"].as_str() {
+                Some("message_start") => v["message"]["usage"]["input_tokens"].as_u64(),
+                Some("message_delta") => v["usage"]["output_tokens"].as_u64(),
+                _ => None,
+            };
+            let Some(n) = n else { return };
+            let u = slot.get_or_insert(Usage {
+                input_tokens: 0,
+                output_tokens: 0,
+            });
+            if v["type"] == "message_start" {
+                u.input_tokens = n as u32;
+            } else {
+                u.output_tokens = n as u32;
+            }
+        }
+        Provider::OpenAi | Provider::DeepSeek => {
+            if let (Some(i), Some(o)) = (
+                v["usage"]["prompt_tokens"].as_u64(),
+                v["usage"]["completion_tokens"].as_u64(),
+            ) {
+                *slot = Some(Usage {
+                    input_tokens: i as u32,
+                    output_tokens: o as u32,
+                });
+            }
+        }
+    }
+}
+
 /// Drive the Server-Sent-Events response, extracting text deltas per provider.
 async fn consume_sse(
     resp: reqwest::Response,
@@ -329,6 +413,7 @@ async fn consume_sse(
 
     let mut buf: Vec<u8> = Vec::new();
     let mut full = String::new();
+    let mut usage: Option<Usage> = None;
 
     while let Some(chunk) = resp.chunk().await? {
         buf.extend_from_slice(&chunk);
@@ -343,10 +428,14 @@ async fn consume_sse(
         while let Some(pos) = buf.iter().position(|&b| b == b'\n') {
             let raw: Vec<u8> = buf.drain(..=pos).collect();
             let line = String::from_utf8_lossy(&raw);
-            match handle_sse_line(&line, provider, &mut full, &mut *sink)? {
+            match handle_sse_line(&line, provider, &mut full, &mut *sink, &mut usage)? {
                 LineOutcome::Continue => {}
                 LineOutcome::ChannelClosed => {
-                    return Ok(ChatOutcome { text: full, completed: false });
+                    return Ok(ChatOutcome {
+                        text: full,
+                        completed: false,
+                        usage,
+                    });
                 }
             }
         }
@@ -359,14 +448,22 @@ async fn consume_sse(
     // response — would be left unprocessed in `buf` and silently dropped.
     if !buf.is_empty() {
         let line = String::from_utf8_lossy(&buf);
-        match handle_sse_line(&line, provider, &mut full, &mut *sink)? {
+        match handle_sse_line(&line, provider, &mut full, &mut *sink, &mut usage)? {
             LineOutcome::Continue => {}
             LineOutcome::ChannelClosed => {
-                return Ok(ChatOutcome { text: full, completed: false });
+                return Ok(ChatOutcome {
+                    text: full,
+                    completed: false,
+                    usage,
+                });
             }
         }
     }
-    Ok(ChatOutcome { text: full, completed: true })
+    Ok(ChatOutcome {
+        text: full,
+        completed: true,
+        usage,
+    })
 }
 
 /// Detect a provider error object carried inside an SSE data frame.
@@ -493,8 +590,14 @@ mod tests {
         let mut got = Vec::new();
         let mut full = String::new();
         let line = "data: {\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n";
-        let out = handle_sse_line(line, Provider::OpenAi, &mut full, &mut recording_sink(&mut got))
-            .unwrap();
+        let out = handle_sse_line(
+            line,
+            Provider::OpenAi,
+            &mut full,
+            &mut recording_sink(&mut got),
+            &mut None,
+        )
+        .unwrap();
         assert!(matches!(out, LineOutcome::Continue));
         assert_eq!(full, "hi");
         assert_eq!(got, vec!["hi"]);
@@ -505,8 +608,14 @@ mod tests {
         let mut got = Vec::new();
         let mut full = String::new();
         for line in [": keep-alive comment\n", "data: [DONE]\n", "\n"] {
-            handle_sse_line(line, Provider::OpenAi, &mut full, &mut recording_sink(&mut got))
-                .unwrap();
+            handle_sse_line(
+                line,
+                Provider::OpenAi,
+                &mut full,
+                &mut recording_sink(&mut got),
+                &mut None,
+            )
+            .unwrap();
         }
         assert!(full.is_empty());
         assert!(got.is_empty());
@@ -516,7 +625,7 @@ mod tests {
     fn sse_line_surfaces_a_mid_stream_error() {
         let mut full = String::new();
         let line = "data: {\"error\":{\"message\":\"rate limited\"}}\n";
-        let err = handle_sse_line(line, Provider::OpenAi, &mut full, &mut |_: &str| true)
+        let err = handle_sse_line(line, Provider::OpenAi, &mut full, &mut |_: &str| true, &mut None)
             .unwrap_err();
         assert!(err.to_string().contains("rate limited"));
     }
@@ -526,7 +635,8 @@ mod tests {
         // A sink returning `false` (the consumer went away) must stop the stream.
         let mut full = String::new();
         let line = "data: {\"choices\":[{\"delta\":{\"content\":\"x\"}}]}\n";
-        let out = handle_sse_line(line, Provider::OpenAi, &mut full, &mut |_: &str| false).unwrap();
+        let out =
+            handle_sse_line(line, Provider::OpenAi, &mut full, &mut |_: &str| false, &mut None).unwrap();
         assert!(matches!(out, LineOutcome::ChannelClosed));
     }
 
@@ -539,9 +649,73 @@ mod tests {
         let mut got = Vec::new();
         let mut full = String::new();
         let last = "data: {\"choices\":[{\"delta\":{\"content\":\"!\"}}]}";
-        handle_sse_line(last, Provider::OpenAi, &mut full, &mut recording_sink(&mut got)).unwrap();
+        handle_sse_line(
+            last,
+            Provider::OpenAi,
+            &mut full,
+            &mut recording_sink(&mut got),
+            &mut None,
+        )
+        .unwrap();
         assert_eq!(full, "!");
         assert_eq!(got, vec!["!"]);
+    }
+
+    // --- token usage: providers report it on different frames ---
+
+    use super::{merge_usage, Usage};
+
+    #[test]
+    fn anthropic_usage_is_merged_across_two_frames() {
+        // `message_start` carries the input count, `message_delta` the output
+        // count — neither frame alone is the whole story.
+        let mut usage = None;
+        merge_usage(
+            &mut usage,
+            &json!({ "type": "message_start", "message": { "usage": { "input_tokens": 812 } } }),
+            Provider::Anthropic,
+        );
+        assert_eq!(usage, Some(Usage { input_tokens: 812, output_tokens: 0 }));
+        merge_usage(
+            &mut usage,
+            &json!({ "type": "message_delta", "usage": { "output_tokens": 96 } }),
+            Provider::Anthropic,
+        );
+        assert_eq!(
+            usage,
+            Some(Usage { input_tokens: 812, output_tokens: 96 })
+        );
+        assert_eq!(usage.unwrap().total(), 908);
+    }
+
+    #[test]
+    fn openai_usage_chunk_is_captured() {
+        // The final chunk of an `include_usage` stream carries both counts.
+        let mut usage = None;
+        merge_usage(
+            &mut usage,
+            &json!({ "choices": [], "usage": { "prompt_tokens": 40, "completion_tokens": 12 } }),
+            Provider::OpenAi,
+        );
+        assert_eq!(usage, Some(Usage { input_tokens: 40, output_tokens: 12 }));
+    }
+
+    #[test]
+    fn frames_without_usage_leave_it_unset() {
+        // A plain delta chunk (or a provider that reports nothing) must not
+        // fabricate a zero-usage reading — the UI then simply omits the count.
+        let mut usage = None;
+        merge_usage(
+            &mut usage,
+            &json!({ "type": "content_block_delta", "delta": { "text": "x" } }),
+            Provider::Anthropic,
+        );
+        merge_usage(
+            &mut usage,
+            &json!({ "choices": [{ "delta": { "content": "x" } }] }),
+            Provider::OpenAi,
+        );
+        assert_eq!(usage, None);
     }
 
     // --- AiConfig::new: normalising pasted credentials. ---

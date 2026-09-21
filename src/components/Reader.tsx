@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "../api";
 import { LANGUAGES } from "../i18n";
-import { useUi, PANEL_BOUNDS } from "../store";
+import { useUi } from "../store";
 import { usePlayer } from "../player";
 import { useTranslationJobs } from "../translation";
 import { useArticleActions } from "../hooks/articleActions";
@@ -14,11 +14,11 @@ import { imageDataUrl } from "../lib/imageBytes";
 import { fullDate } from "../lib/feedMeta";
 import { isMac } from "../lib/platform";
 import { reportError, toast } from "../toast";
+import { errorText } from "../lib/errors";
 import { tagColor } from "../lib/tagColors";
 import type { ArticleDetail } from "../types";
 import Icon from "./Icon";
 import TagPicker from "./TagPicker";
-import ResizeHandle from "./ResizeHandle";
 import HighlightLayer from "./HighlightLayer";
 import ContextMenu, { type MenuEntry } from "./ContextMenu";
 import Lightbox from "./Lightbox";
@@ -182,8 +182,6 @@ export default function Reader({ onToast }: Props) {
   const id = useUi((s) => s.selectedArticleId);
   const focusMode = useUi((s) => s.focusMode);
   const setFocusMode = useUi((s) => s.setFocusMode);
-  const aiOpen = useUi((s) => s.aiOpen);
-  const setAiOpen = useUi((s) => s.setAiOpen);
   const markReadOnOpen = useUi((s) => s.prefs.markReadOnOpen);
   const markReadOnScroll = useUi((s) => s.prefs.markReadOnScroll);
   const showReadingTime = useUi((s) => s.prefs.showReadingTime);
@@ -300,14 +298,13 @@ export default function Reader({ onToast }: Props) {
   // Anything that floats over the reading area must suspend the page view: the
   // child webview floats above the whole DOM, so it would otherwise occlude a
   // covering modal (subscribe / settings / explore — issue #54), a context
-  // menu raised over the reader (issue #74), the tag picker, or the AI drawer
-  // that slides over the reader's right edge. We *hide* the webview rather than
-  // tear it down, so dismissing the overlay reveals the already-loaded page
-  // instantly instead of reloading it (the bounds keep syncing while hidden,
-  // below).
+  // menu raised over the reader (issue #74), or the tag picker. We *hide* the
+  // webview rather than tear it down, so dismissing the overlay reveals the
+  // already-loaded page instantly instead of reloading it (the bounds keep
+  // syncing while hidden, below).
   const modalOpen = useUi((s) => s.modalOpen);
   const menuOpen = useUi((s) => s.menuOpen);
-  const overlayOpen = modalOpen || menuOpen || aiOpen || tagPick != null;
+  const overlayOpen = modalOpen || menuOpen || tagPick != null;
   // Read the latest value inside the lifecycle effect without making it a
   // dependency — overlays toggle visibility (below), never the webview's life.
   const overlayOpenRef = useRef(overlayOpen);
@@ -336,8 +333,8 @@ export default function Reader({ onToast }: Props) {
           api.closePageView().catch(() => {});
           return;
         }
-        // Created visible by default; if an overlay is already up (e.g. the AI
-        // drawer was open when web mode was toggled on), hide it at once.
+        // Created visible by default; if an overlay is already up (e.g. a
+        // context menu was open when web mode was toggled on), hide it at once.
         if (overlayOpenRef.current) api.setPageViewVisible(false).catch(() => {});
       },
       () => {},
@@ -1018,6 +1015,8 @@ export default function Reader({ onToast }: Props) {
             </div>
           )}
 
+          <AISummary article={a} />
+
           {ytId ? (
             <iframe
               style={{ width: "100%", aspectRatio: "16 / 9" }}
@@ -1189,16 +1188,6 @@ export default function Reader({ onToast }: Props) {
         />
       )}
 
-      <AIDrawer
-        // Keyed by article id so switching articles remounts the drawer:
-        // its `text` state then re-initialises from the new article's
-        // summary, rather than carrying the previous one's across.
-        key={a.id}
-        open={aiOpen}
-        article={a}
-        onClose={() => setAiOpen(false)}
-      />
-
       {tagPick && (
         <TagPicker
           articleId={a.id}
@@ -1242,9 +1231,9 @@ export default function Reader({ onToast }: Props) {
               ? [{ separator: true as const }]
               : []),
             {
-              icon: aiOpen ? "sparkle-fill" : "sparkle",
+              icon: "sparkle",
               label: t("reader.tbAiSummary"),
-              onClick: () => setAiOpen(!aiOpen),
+              onClick: () => useUi.getState().requestAiSummary(),
             },
             ...(canTranslate
               ? [
@@ -1278,44 +1267,35 @@ export default function Reader({ onToast }: Props) {
   );
 }
 
-function AIDrawer({
-  open,
-  article,
-  onClose,
-}: {
-  open: boolean;
-  article: ArticleDetail;
-  onClose: () => void;
-}) {
+/** AI summary — a section inline at the top of the article content rather than
+ *  an overlay: it reads as part of the article. Nothing is generated until the
+ *  user asks for it (the button below, or the I shortcut / command palette /
+ *  reader context menu, which all bump the store's request counter) — opening
+ *  an article must not silently spend a model call. A finished summary is
+ *  persisted by the backend, so revisiting an article shows the stored text
+ *  without calling the model again. */
+function AISummary({ article }: { article: ArticleDetail }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const aiWidth = useUi((s) => s.aiWidth);
   // Initialised from the article's stored summary (if any). The parent keys
-  // this component by article id, so a switch remounts it and re-runs this
+  // the article by id, so a switch remounts this component and re-runs this
   // initialiser — no separate "reset on article change" effect is needed.
   const [text, setText] = useState<string | null>(article.aiSummary);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [retry, setRetry] = useState(0);
-  // Identifies the latest summarize run. Closing the drawer mid-stream cancels
-  // an effect run but the component stays mounted (it is only moved off-screen),
-  // so the underlying request keeps streaming and its promise settles later.
-  // Only the run whose generation still matches may touch `busy` on settle —
-  // otherwise a stale run's `finally` would either wedge the drawer on the
-  // loading state or clobber a newer run's `busy` flag.
+  // The failure detail, shown in the section itself rather than only in the
+  // transient toast — a user who has scrolled on still sees why it failed.
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Identifies the latest generate run. Only the run whose generation still
+  // matches may clear `busy` on settle — otherwise a stale run's `finally`
+  // would either wedge the section on the loading state or clobber a newer
+  // run's `busy` flag.
   const runRef = useRef(0);
+  const rootRef = useRef<HTMLElement>(null);
 
-  // Generate a summary the first time the drawer opens for an article, and
-  // again whenever the user hits Retry. `failed` is in the guard so a failed
-  // run isn't silently re-attempted just because the drawer was reopened.
-  useEffect(() => {
-    if (!open || busy || text || failed) return;
+  const generate = useCallback(() => {
+    if (busy) return;
     const run = ++runRef.current;
-    let cancelled = false;
-    // Whether the stream settled (resolved or rejected) on its own. If the
-    // cleanup runs while this is still false, the drawer was closed mid-stream
-    // — the accumulated `text` is then a truncated fragment.
-    let settled = false;
     // An error raised inside the stream surfaces twice: once as an `error`
     // channel event (carrying the precise provider message) and again as the
     // command's rejected promise. Toast only the first so the user does not
@@ -1323,131 +1303,164 @@ function AIDrawer({
     // failures that abort before streaming starts (no key, bad config) and so
     // never emit an `error` event.
     let sawErrorEvent = false;
+    // A re-generation keeps the previous summary on screen until the new one
+    // starts streaming, so the section never blanks out mid-run (and the
+    // header button keeps its "regenerate" label throughout).
+    let started = false;
     setBusy(true);
-    setText("");
+    setFailed(false);
+    setErrorMsg(null);
     api
       .aiSummarize(article.id, (ev) => {
-        if (cancelled) return;
-        if (ev.type === "delta") setText((s) => (s ?? "") + ev.data);
-        else if (ev.type === "error") {
+        if (ev.type === "delta") {
+          if (!started) {
+            started = true;
+            setText("");
+          }
+          setText((s) => (s ?? "") + ev.data);
+        } else if (ev.type === "error") {
           sawErrorEvent = true;
           setFailed(true);
-          toast.error(ev.data);
+          // `errorText` localizes the coded failure (no key set, network, …)
+          // and passes a provider's own message through verbatim.
+          const msg = errorText(ev.data);
+          setErrorMsg(msg);
+          toast.error(msg);
         }
       })
       .then(() => {
-        if (!cancelled) qc.invalidateQueries({ queryKey: ["article", article.id] });
+        qc.invalidateQueries({ queryKey: ["article", article.id] });
       })
       .catch((e) => {
-        if (!cancelled && !sawErrorEvent) {
+        if (!sawErrorEvent) {
           setFailed(true);
+          // A failure before streaming starts (no key, bad config) never emits
+          // an `error` event, so this is the only place it surfaces.
+          const msg = errorText(e);
+          setErrorMsg(msg);
           reportError(e);
         }
       })
       .finally(() => {
-        settled = true;
-        // Clear `busy` for the current run even if it was cancelled — the
-        // component is still mounted, and leaving `busy` true would wedge the
-        // drawer on the loading state. Skip if a newer run has superseded us.
         if (runRef.current === run) setBusy(false);
       });
-    return () => {
-      cancelled = true;
-      // Closed mid-stream: the backend discards an interrupted generation
-      // (it is never persisted), so drop the partial fragment held here too.
-      // Reopening then re-generates from scratch instead of showing — and
-      // permanently freezing on — a truncated half-summary.
-      if (!settled) setText(article.aiSummary);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, article.id, retry]);
+  }, [article.id, busy, qc]);
 
-  const loading = busy && !text;
-  const onRetry = () => {
-    setText("");
-    setFailed(false);
-    setRetry((n) => n + 1);
-  };
+  // External "generate a summary" requests — the I shortcut, the command
+  // palette, the reader's context menu. The counter is store-global while this
+  // component remounts per article, so compare against the value seen at
+  // mount: otherwise merely opening a new article would re-fire a request made
+  // for the previous one.
+  const request = useUi((s) => s.aiSummaryRequest);
+  const seenRequest = useRef(request);
+  useEffect(() => {
+    if (request === seenRequest.current) return;
+    seenRequest.current = request;
+    if (busy) return;
+    if (text) {
+      // A summary is already on screen — bring the section back into view.
+      rootRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else {
+      generate();
+    }
+  }, [request, busy, text, generate]);
+
+  // The section's single action, in the header: generate when nothing has been
+  // produced yet, regenerate once a summary exists, retry after a failure.
+  // Filled while there is nothing to show (so it reads as the thing to click),
+  // quiet once a summary is on screen.
+  const actionLabel = failed
+    ? t("common.retry")
+    : text
+      ? t("reader.aiRegenerate")
+      : t("reader.aiGenerate");
   // Parse + sanitize the summary only when the text changes, not on every
-  // AIDrawer re-render (e.g. each open/close toggle).
+  // re-render of the section.
   const html = useMemo(() => (text ? renderMarkdown(text) : ""), [text]);
 
+  // The secondary line under the card — never inside it, so neither the
+  // pre-generation prompt nor the provenance reads as part of the summary
+  // itself. A summary from a build that recorded no provenance (or a provider
+  // that reported no usage) falls back to the plain disclaimer rather than
+  // showing a half-empty line. While a run is in flight the footer carries the
+  // in-progress notice instead (rendered as JSX below).
+  let foot = "";
+  if (text && !failed) {
+    const parts: string[] = [];
+    if (article.aiSummaryModel)
+      parts.push(t("reader.aiBy", { model: article.aiSummaryModel }));
+    if (article.aiSummaryMs != null)
+      parts.push(
+        t("reader.aiTook", { seconds: (article.aiSummaryMs / 1000).toFixed(1) }),
+      );
+    if (article.aiSummaryTokens != null)
+      parts.push(
+        t("reader.aiTokens", { count: article.aiSummaryTokens.toLocaleString() }),
+      );
+    foot =
+      parts.length > 0
+        ? `${parts.join(" · ")} · ${t("reader.aiReferenceOnly")}`
+        : t("reader.aiDisclaimer");
+  } else if (!failed && !text) {
+    foot = t("reader.aiIdleHint");
+  }
+
+  // Before the first summary exists the body holds nothing (the in-progress
+  // notice lives in the footer), so the header's divider would hang over blank
+  // space — drop it, and the body's padding, until there is something to show.
+  const bodyEmpty = !text && !failed;
+
   return (
-    <div
-      className={`ai-drawer ${open ? "open" : ""}`}
-      // A labelled complementary landmark so screen-reader users can jump
-      // straight to the summary.
-      role="complementary"
-      aria-label={t("reader.aiSummaryTitle")}
-      // When closed the drawer is only moved off-screen — `inert` keeps its
-      // close button and content out of the tab order and the a11y tree.
-      inert={!open}
-    >
-      {/* Left-edge handle: dragging left widens the drawer. Hidden from the
-          a11y tree while the drawer is closed (the whole drawer is `inert`). */}
-      <div className="resize-handle-slot resize-handle-slot--inline">
-        <ResizeHandle
-          width={aiWidth}
-          side="left"
-          min={PANEL_BOUNDS.ai.min}
-          max={PANEL_BOUNDS.ai.max}
-          onResize={(w) => useUi.getState().setPanel({ aiWidth: w })}
-          label={t("reader.resizeAi")}
-        />
-      </div>
-      <div className="ai-head">
-        <span className="accent-ico">
-          <Icon name="sparkle-fill" size={15} />
-        </span>
-        <h3>{t("reader.aiSummaryTitle")}</h3>
-        <button
-          className="tb-btn close"
-          onClick={onClose}
-          title={t("common.close")}
-          aria-label={t("common.close")}
-        >
-          <Icon name="x" size={14} />
-        </button>
-      </div>
-      <div className="ai-body" aria-live="polite" aria-busy={busy}>
-        {loading && (
-          <div className="ai-loading">
-            <span className="ai-dot" />
-            <span className="ai-dot" />
-            <span className="ai-dot" />
-            <span style={{ marginLeft: 4 }}>{t("reader.aiReadingFullText")}</span>
-          </div>
-        )}
-        {failed && !busy && (
-          <div className="ai-error">
-            <Icon name="alert" size={18} />
-            <span>{t("reader.aiError")}</span>
-            <button className="empty-retry" onClick={onRetry}>
-              <Icon name="refresh" size={12} />
-              {t("common.retry")}
-            </button>
-          </div>
-        )}
-        {text && !failed && (
-          <>
+    <div className="ai-summary-wrap">
+      <section
+        className={`ai-summary ${bodyEmpty ? "is-empty" : ""}`}
+        ref={rootRef}
+        aria-label={t("reader.aiSummaryTitle")}
+      >
+        <div className="ai-head">
+          <span className="accent-ico">
+            <Icon name="sparkle-fill" size={15} />
+          </span>
+          <h3>{t("reader.aiSummaryTitle")}</h3>
+          <button
+            className={`ai-action ${text ? "quiet" : ""}`}
+            onClick={generate}
+            disabled={busy}
+          >
+            <Icon name={text || failed ? "refresh" : "sparkle"} size={12} />
+            {actionLabel}
+          </button>
+        </div>
+        <div className="ai-body" aria-live="polite" aria-busy={busy}>
+          {failed && !busy && (
+            <div className="ai-error">
+              <Icon name="alert" size={16} />
+              <span>{errorMsg || t("reader.aiError")}</span>
+            </div>
+          )}
+          {text && !failed && (
             <div
               className="ai-prose"
               onClick={makeLinkClickHandler(article.url)}
               dangerouslySetInnerHTML={{ __html: html }}
             />
-            <div
-              style={{
-                fontSize: 11,
-                color: "var(--muted-2)",
-                marginTop: 24,
-                lineHeight: 1.5,
-              }}
-            >
-              {t("reader.aiDisclaimer")}
-            </div>
-          </>
-        )}
-      </div>
+          )}
+        </div>
+      </section>
+      {(busy || foot) && (
+        <div className="ai-foot">
+          {busy ? (
+            <span className="ai-foot-status">
+              <span className="ai-dot" />
+              <span className="ai-dot" />
+              <span className="ai-dot" />
+              {t("reader.aiReadingFullText")}
+            </span>
+          ) : (
+            foot
+          )}
+        </div>
+      )}
     </div>
   );
 }

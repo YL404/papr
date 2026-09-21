@@ -82,7 +82,7 @@ pub async fn set_page_view_bounds(
 }
 
 /// Show or hide the open page view without tearing it down. A transient
-/// overlay (context menu, modal, AI drawer) only needs the native webview out
+/// overlay (context menu, modal, tag picker) only needs the native webview out
 /// of the way for a moment — hiding keeps the loaded page alive, so dismissing
 /// the overlay reveals it instantly instead of reloading the whole page.
 /// No-op when the view isn't open.

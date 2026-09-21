@@ -93,7 +93,6 @@ export default function App() {
   const readerWidth = useUi((s) => s.readerWidth);
   const sidebarWidth = useUi((s) => s.sidebarWidth);
   const listWidth = useUi((s) => s.listWidth);
-  const aiWidth = useUi((s) => s.aiWidth);
   const reduceMotion = useUi((s) => s.prefs.reduceMotion);
   const focusMode = useUi((s) => s.focusMode);
 
@@ -215,16 +214,15 @@ export default function App() {
     root.setProperty("--reader-width", `${readerWidth}px`);
   }, [readerFont, readerSize, readerLeading, readerWidth]);
 
-  // ── apply the draggable pane widths as the grid/drawer CSS variables ──
-  // These drive `.window`'s grid columns and the AI drawer's width; the resize
-  // handles write to the store, the store persists, and this mirrors the value
-  // back onto the document root.
+  // ── apply the draggable pane widths as the grid CSS variables ──
+  // These drive `.window`'s grid columns; the resize handles write to the
+  // store, the store persists, and this mirrors the values back onto the
+  // document root.
   useEffect(() => {
     const root = document.documentElement.style;
     root.setProperty("--col-sidebar", `${sidebarWidth}px`);
     root.setProperty("--col-list", `${listWidth}px`);
-    root.setProperty("--ai-width", `${aiWidth}px`);
-  }, [sidebarWidth, listWidth, aiWidth]);
+  }, [sidebarWidth, listWidth]);
 
   // ── toast ──
   // The store owns the queue; App owns only the dwell timer and the render.
@@ -352,9 +350,9 @@ export default function App() {
       case "toggle-focus":
         useUi.getState().setFocusMode(!useUi.getState().focusMode);
         break;
-      case "toggle-ai":
+      case "ai-summary":
         if (useUi.getState().selectedArticleId != null)
-          useUi.getState().setAiOpen(!useUi.getState().aiOpen);
+          useUi.getState().requestAiSummary();
         break;
       case "refresh": doRefresh(); break;
       case "add-feed": setAddFeed(true); break;
@@ -484,7 +482,7 @@ export default function App() {
         case "i":
           if (st.selectedArticleId != null) {
             e.preventDefault();
-            st.setAiOpen(!st.aiOpen);
+            st.requestAiSummary();
           }
           break;
         case "f": e.preventDefault(); st.setFocusMode(!st.focusMode); break;
@@ -501,7 +499,6 @@ export default function App() {
           break;
         case "escape":
           st.setFocusMode(false);
-          st.setAiOpen(false);
           break;
       }
     };

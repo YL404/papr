@@ -16,6 +16,7 @@ mod page_view;
 // top of `papr_core::ingestion`. Was `ingestion::scheduler` before the split.
 mod scheduler;
 mod state;
+mod summary;
 mod translate;
 mod tray;
 
@@ -260,6 +261,8 @@ pub fn run() {
             commands::ai_digest,
             commands::ai_translate,
             commands::translate_article_preview,
+            commands::default_translate_prompt,
+            commands::summary_presets,
             commands::storage_stats,
             commands::cleanup_articles,
             commands::vacuum_db,

@@ -381,15 +381,6 @@ button { font-family: inherit; }
   z-index: 6;            /* above the panes, below modals/toasts */
   pointer-events: none;  /* only the handle itself is interactive */
 }
-.resize-handle-slot--inline {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 6;
-  width: 0;
-  pointer-events: none;
-}
 .resize-handle {
   position: absolute;
   top: 0;
@@ -1158,55 +1149,89 @@ button { font-family: inherit; }
 }
 .tag:hover { background: var(--accent-soft); color: var(--accent-ink); }
 
-/* AI summary drawer */
-.ai-drawer {
-  position: absolute;
-  top: 38px; right: 0; bottom: 0;
-  width: var(--ai-width, 360px);
-  background: var(--panel);
-  border-left: 1px solid var(--hair);
-  transform: translateX(100%);
-  transition: transform .35s cubic-bezier(.22,.61,.36,1);
-  z-index: 5;
-  display: flex;
-  flex-direction: column;
+/* AI summary — a section inline at the top of the article content. The wrapper
+   owns the outer spacing so the card and its secondary line below move as one. */
+.ai-summary-wrap {
+  margin: 0 0 28px;
 }
-.ai-drawer.open { transform: translateX(0); }
+.ai-summary {
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--panel);
+  /* Clear the sticky toolbar when the section is scrolled to (I shortcut). */
+  scroll-margin-top: 52px;
+}
+/* The secondary line under the card: the pre-generation prompt, or the
+   summary's provenance. Deliberately outside the card so neither reads as part
+   of the summary itself. */
+.ai-foot {
+  margin: 8px 2px 0;
+  font-size: 11.5px;
+  color: var(--muted-2);
+  line-height: 1.5;
+}
 .ai-head {
-  padding: 18px 20px 12px;
+  padding: 9px 14px;
   display: flex;
   align-items: center;
   gap: 8px;
   border-bottom: 1px solid var(--hair);
 }
+/* Nothing in the body yet (before the first summary, or while it is still
+   starting up): the divider would hang over blank space, and the body's
+   padding would open a gap with nothing in it. */
+.ai-summary.is-empty .ai-head { border-bottom: 0; }
+.ai-summary.is-empty .ai-body { padding: 0; }
 .ai-head h3 {
   margin: 0;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 .ai-head .accent-ico { color: var(--accent); display: inline-flex; }
-.ai-head .close { margin-left: auto; }
+/* The section's single action, living in the header: generate / regenerate /
+   retry. Filled while it is the primary call to action (nothing generated
+   yet), quiet once a summary exists. */
+.ai-action {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: var(--accent-soft);
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 550;
+  color: var(--accent-ink);
+  cursor: pointer;
+  transition: background .12s, color .12s, filter .12s;
+}
+.ai-action:hover { filter: brightness(0.97); }
+.ai-action.quiet {
+  border-color: var(--hair);
+  background: none;
+  color: var(--muted);
+}
+.ai-action.quiet:hover { background: var(--hover); color: var(--ink-2); filter: none; }
+.ai-action:disabled { opacity: 0.5; cursor: default; filter: none; }
 .ai-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 18px 20px;
+  padding: 14px;
   font-size: 13px;
   line-height: 1.6;
   color: var(--ink-2);
 }
-.ai-loading {
+/* In-progress notice, shown in the footer while a run is in flight. */
+.ai-foot-status {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  color: var(--muted);
-  font-size: 12px;
 }
 .ai-error {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 8px;
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -2169,7 +2194,7 @@ button { font-family: inherit; }
 .enclosure { margin: 1.4em 0; }
 .enclosure video { width: 100%; }
 
-/* AI drawer — markdown prose (real streaming output) */
+/* AI summary — markdown prose (real streaming output) */
 .ai-prose { overflow-wrap: break-word; }
 .ai-prose p { margin: 0 0 0.8em; }
 .ai-prose h1, .ai-prose h2, .ai-prose h3 {
@@ -2511,6 +2536,45 @@ button { font-family: inherit; }
   width: 220px;
 }
 .s-text-input:focus { border-color: var(--accent); }
+/* Prompt editor — a full-width multi-line field, so it opts out of the
+   label-left / control-right settings-row layout. */
+.settings-prompt {
+  padding: 12px 0 0;
+  border-bottom: 1px solid var(--hair);
+}
+.settings-prompt:last-child { border-bottom: 0; }
+.settings-prompt-foot {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0 2px;
+}
+/* Preset picker row, sitting above the prompt field. */
+.settings-prompt-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.settings-prompt-hint {
+  font-size: 11.5px;
+  color: var(--muted-2);
+  margin: 8px 0 2px;
+}
+.s-textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--ink);
+  background: var(--panel);
+  border: 1px solid var(--hair-strong);
+  border-radius: 6px;
+  padding: 8px 10px;
+  outline: 0;
+  width: 100%;
+  min-height: 140px;
+  resize: vertical;
+}
+.s-textarea:focus { border-color: var(--accent); }
 
 /* ====== App shell + audio mini-player ====== */
 .app-shell {

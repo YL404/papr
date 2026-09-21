@@ -43,6 +43,12 @@ impl AppError {
         AppError::Coded(code)
     }
 
+    /// The stable error code plus any inner detail — the shape surfaced over a
+    /// UI channel, where the full error can be neither cloned nor sent.
+    pub fn code_and_detail(&self) -> (String, Option<String>) {
+        (self.code_str().to_string(), self.detail())
+    }
+
     /// Stable error code consumed by the frontend i18n layer.
     fn code_str(&self) -> &str {
         match self {

@@ -191,6 +191,17 @@ export function aiTranslate(
 export const translateArticlePreview = (articleId: number, lang: string, engine: string) =>
   invoke<ArticlePreviewTranslation>("translate_article_preview", { articleId, lang, engine });
 
+/** The built-in translation prompt template, shown in Settings → AI as the
+ *  current effective prompt when the user has not customized it (and restored
+ *  by the "restore default" action). */
+export const defaultTranslatePrompt = () =>
+  invoke<string>("default_translate_prompt");
+
+/** The selectable built-in AI-summary prompt templates (id + text), so Settings
+ *  can list them and preview each one's prompt. */
+export const summaryPresets = () =>
+  invoke<{ id: string; template: string }[]>("summary_presets");
+
 // ── settings ──
 export const getSetting = (key: string) =>
   invoke<string | null>("get_setting", { key });
