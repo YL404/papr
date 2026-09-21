@@ -281,6 +281,7 @@
       "listStyle": "\u8a18\u4e8b\u30ea\u30b9\u30c8\u306e\u30b9\u30bf\u30a4\u30eb",
       "listStyleList": "\u30ea\u30b9\u30c8",
       "listStyleCard": "\u30ab\u30fc\u30c9",
+      "listStyleSmallImage": "\u5c0f\u753b\u50cf",
       "details": "\u8a73\u7d30",
       "sidebarCounts": "\u30b5\u30a4\u30c9\u30d0\u30fc\u306b\u672a\u8aad\u6570\u3092\u8868\u793a",
       "cardThumbs": "\u8a18\u4e8b\u30ab\u30fc\u30c9\u306b\u30b5\u30e0\u30cd\u30a4\u30eb\u3092\u8868\u793a",

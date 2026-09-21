@@ -826,6 +826,7 @@ function AppearanceSection() {
             value={viewMode}
             options={[
               { value: "list", label: t("settings.appearance.listStyleList") },
+              { value: "small-image", label: t("settings.appearance.listStyleSmallImage") },
               { value: "card", label: t("settings.appearance.listStyleCard") },
             ]}
             onChange={setViewMode}

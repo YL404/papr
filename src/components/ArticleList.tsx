@@ -614,7 +614,13 @@ export default function ArticleList({ onToast }: Props) {
                   }}
                 >
                   <div
-                    className={`art ${viewMode === "card" ? "card" : ""} ${
+                    className={`art ${
+                      viewMode === "card"
+                        ? "card"
+                        : viewMode === "small-image"
+                          ? "small-image"
+                          : ""
+                    } ${
                       selectedId === a.id ? "active" : ""
                     } ${a.isRead ? "read" : ""}`}
                     role="option"
@@ -628,10 +634,11 @@ export default function ArticleList({ onToast }: Props) {
                     onMouseEnter={(e) => onHover(a, e)}
                     onMouseLeave={leaveHover}
                   >
-                    {viewMode === "card" && showCardThumbs && (
+                    {(viewMode === "card" || viewMode === "small-image") && showCardThumbs && (
                       <CardThumb article={a} />
                     )}
-                    <div className="art-head">
+                    <div className="art-body">
+                      <div className="art-head">
                       {!a.isRead && <span className="art-dot" />}
                       <span className="art-feed">{a.feedTitle}</span>
                       {feed && feed.sourceType !== "rss" && (
@@ -682,6 +689,7 @@ export default function ArticleList({ onToast }: Props) {
                         {rt.snippet}
                       </p>
                     )}
+                    </div>
                   </div>
                 </div>
               );

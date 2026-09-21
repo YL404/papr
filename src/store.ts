@@ -38,7 +38,7 @@ export function resolveMode(mode: Mode): ResolvedMode {
   return mode;
 }
 export type Density = "compact" | "cozy" | "spacious";
-export type ViewMode = "list" | "card";
+export type ViewMode = "list" | "card" | "small-image";
 export type StartupView = "all" | "unread" | "starred" | "last";
 export type ReaderFont = "serif" | "sans" | "hyperlegible";
 
@@ -299,7 +299,7 @@ export const useUi = create<UiState>((set, get) => ({
     ["compact", "cozy", "spacious"],
     "cozy",
   ),
-  viewMode: ls.oneOf<ViewMode>("viewMode", ["list", "card"], "list"),
+  viewMode: ls.oneOf<ViewMode>("viewMode", ["list", "card", "small-image"], "list"),
   readerFont: loadReaderFont(),
   readerSize: ls.num("readerSize", 17, READER_BOUNDS.size.min, READER_BOUNDS.size.max),
   readerLeading: ls.num(

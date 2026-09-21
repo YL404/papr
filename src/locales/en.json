@@ -281,6 +281,7 @@
       "listStyle": "Article list style",
       "listStyleList": "List",
       "listStyleCard": "Card",
+      "listStyleSmallImage": "Small image",
       "details": "Details",
       "sidebarCounts": "Show unread counts in sidebar",
       "cardThumbs": "Show thumbnails on article cards",
