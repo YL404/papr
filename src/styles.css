@@ -2230,7 +2230,9 @@ button { font-family: inherit; }
   margin-right: auto;
 }
 .article-body img {
-  max-width: 100%;
+  /* Width cap too: a landscape image otherwise always fills the full column,
+     which dwarfs the surrounding text even though its height stays legal. */
+  max-width: 85%;
   /* Cap portrait images too (phone screenshots, manga strips): `height: auto`
      alone lets one scale to the full column width and push pages of text
      below the fold. max-width + max-height resolve through the CSS constraint
