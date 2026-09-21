@@ -1175,8 +1175,9 @@ button { font-family: inherit; }
 
 /* AI summary — a section inline at the top of the article content. The wrapper
    owns the outer spacing so the card and its secondary line below move as one.
-   The header, the body and that footer line all share one 20px inset, so the
-   section reads as a single column.
+   The header, the body and that footer line all share one 28px inset, so the
+   section reads as a single column with the prose clearly off the card's
+   border.
 
    Text sizes: the *content* follows Settings → Reading (see `.ai-body` and
    `.ai-prose`); the chrome around it — the title, the action button, the
@@ -1196,14 +1197,14 @@ button { font-family: inherit; }
    of the summary itself. Trailing-aligned and inset like the body, so it hangs
    off the text column's right edge as a footnote to what came above. */
 .ai-foot {
-  margin: 8px 20px 0;
+  margin: 8px 28px 0;
   text-align: right;
   font-size: 11.5px;
   color: var(--muted-2);
   line-height: 1.5;
 }
 .ai-head {
-  padding: 9px 20px;
+  padding: 9px 28px;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1251,7 +1252,7 @@ button { font-family: inherit; }
 .ai-body {
   /* Same inset as the header, so the prose starts on the card's text column
      instead of hugging the border. */
-  padding: 14px 20px;
+  padding: 14px 28px;
   /* Typeface *and* size follow Settings → Reading (`--reader-font` /
      `--reader-size`, both set on :root by App.tsx). The summary is secondary
      content, so it keeps the ~3/4 proportion it has always had against the
