@@ -150,17 +150,6 @@ enum Cmd {
         #[command(subcommand)]
         cmd: RuleCmd,
     },
-    /// List highlights (optionally for one article).
-    Highlights {
-        /// Only highlights on this article id.
-        #[arg(long, value_name = "ID")]
-        article: Option<i64>,
-    },
-    /// Manage highlights (create / note / color / delete).
-    Highlight {
-        #[command(subcommand)]
-        cmd: HighlightCmd,
-    },
     /// Import or export feeds as OPML.
     Opml {
         #[command(subcommand)]
@@ -294,29 +283,6 @@ enum RuleCmd {
     Disable { id: i64 },
 }
 
-#[derive(Subcommand)]
-enum HighlightCmd {
-    /// Create a highlight on an article from a quote.
-    Create {
-        #[arg(value_name = "ARTICLE_ID")]
-        article: i64,
-        quote: String,
-        #[arg(long, default_value = "")]
-        note: String,
-        #[arg(long, default_value = "yellow")]
-        color: String,
-    },
-    /// Set or replace a highlight's note.
-    Note { id: i64, note: String },
-    /// Set a highlight's colour.
-    Color { id: i64, color: String },
-    /// Delete a highlight.
-    Delete {
-        id: i64,
-        #[arg(long)]
-        yes: bool,
-    },
-}
 
 
 #[derive(Subcommand)]
@@ -443,8 +409,6 @@ async fn run(cli: Cli) -> Result<String, AxiError> {
         Some(Cmd::Tag { cmd }) => cmd_tag(&path, cmd),
         Some(Cmd::Rules) => cmd_rules(&path),
         Some(Cmd::Rule { cmd }) => cmd_rule(&path, cmd),
-        Some(Cmd::Highlights { article }) => cmd_highlights(&path, article),
-        Some(Cmd::Highlight { cmd }) => cmd_highlight(&path, cmd),
         Some(Cmd::Opml { cmd }) => cmd_opml(&path, cmd),
         Some(Cmd::Settings { cmd }) => cmd_settings(&path, cmd),
         Some(Cmd::Stats) => cmd_stats(&path),
@@ -1176,61 +1140,6 @@ fn set_rule_enabled(conn: &Connection, id: i64, on: bool) -> Result<String, AxiE
     db::update_rule(conn, id, &r.name, on, r.feed_id, &r.field, &r.query, &r.action)
         .map_err(db_err)?;
     ok_line(format!("rule: #{id} {}", if on { "enabled" } else { "disabled" }))
-}
-
-// ───────────────────────────── highlights ─────────────────────────────
-
-fn cmd_highlights(path: &Path, article: Option<i64>) -> Result<String, AxiError> {
-    let conn = open_ro(path)?;
-    let items = match article {
-        Some(id) => db::list_highlights(&conn, id).map_err(db_err)?,
-        None => db::list_all_highlights(&conn).map_err(db_err)?,
-    };
-    let rows: Vec<Value> = items
-        .iter()
-        .map(|h| {
-            json!({
-                "id": h.id,
-                "article": h.article_id,
-                "quote": cap(&h.quote, 60),
-                "color": h.color,
-                "note": cap(&h.note, 40),
-            })
-        })
-        .collect();
-    Ok(Doc::new().set("highlights", Value::Array(rows)).into_toon())
-}
-
-fn cmd_highlight(path: &Path, cmd: HighlightCmd) -> Result<String, AxiError> {
-    let conn = open_rw(path)?;
-    match cmd {
-        HighlightCmd::Create { article, quote, note, color } => {
-            let h = db::NewHighlight {
-                article_id: article,
-                quote: &quote,
-                prefix: "",
-                suffix: "",
-                text_offset: 0,
-                color: &color,
-                note: &note,
-            };
-            let id = db::insert_highlight(&conn, &h).map_err(db_err)?;
-            ok_line(format!("highlight: #{id} on article {article}"))
-        }
-        HighlightCmd::Note { id, note } => {
-            db::update_highlight_note(&conn, id, &note).map_err(db_err)?;
-            ok_line(format!("highlight: #{id} note updated"))
-        }
-        HighlightCmd::Color { id, color } => {
-            db::set_highlight_color(&conn, id, &color).map_err(db_err)?;
-            ok_line(format!("highlight: #{id} colour {color}"))
-        }
-        HighlightCmd::Delete { id, yes } => {
-            require_yes(yes, "highlight delete", &format!("papr highlight delete {id}"))?;
-            db::delete_highlight(&conn, id).map_err(db_err)?;
-            ok_line(format!("highlight: #{id} deleted"))
-        }
-    }
 }
 
 // ──────────────────────── opml / settings / admin ────────────────────────

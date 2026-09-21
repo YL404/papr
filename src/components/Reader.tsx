@@ -19,7 +19,6 @@ import { tagColor } from "../lib/tagColors";
 import type { ArticleDetail } from "../types";
 import Icon from "./Icon";
 import TagPicker from "./TagPicker";
-import HighlightLayer from "./HighlightLayer";
 import ContextMenu, { type MenuEntry } from "./ContextMenu";
 import Lightbox from "./Lightbox";
 
@@ -894,14 +893,6 @@ export default function Reader({ onToast }: Props) {
         >
           <Icon name="globe" size={16} />
         </button>
-        <HighlightLayer
-          // Keyed by article id so the export menu / popovers reset cleanly
-          // when the reader switches articles.
-          key={a.id}
-          articleId={a.id}
-          bodyRef={bodyRef}
-          bodyVersion={displayBody}
-        />
         <div className="tb-btn spacer" />
         {a.url && (
           <button

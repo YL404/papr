@@ -56,8 +56,8 @@ export function useMenuKeyboard(
       case " ": {
         // The menu items are real <button>s, which already fire `click` on
         // Enter/Space natively. Synthesising another `click()` here would
-        // run the action twice (e.g. exporting highlights to Notion twice).
-        // Only forward the key to a non-natively-activatable element.
+        // run the action twice. Only forward the key to a non-natively-
+        // activatable element.
         const el = document.activeElement as HTMLElement | null;
         if (el && el.tagName !== "BUTTON" && el.tagName !== "A") {
           e.preventDefault();

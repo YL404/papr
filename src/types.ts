@@ -145,19 +145,6 @@ export interface SmartCounts {
   readLater: number;
 }
 
-/** A user highlight / annotation (mirrors models::Highlight). */
-export interface Highlight {
-  id: number;
-  articleId: number;
-  quote: string;
-  prefix: string;
-  suffix: string;
-  textOffset: number;
-  color: string;
-  note: string;
-  createdAt: string;
-}
-
 // Mirrors the adjacently-tagged Rust `ArticleQuery` enum.
 export type ArticleQuery =
   | { kind: "all" }

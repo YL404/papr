@@ -394,13 +394,10 @@ export default function App() {
       // have had their chance.
       if (inField) return;
 
-      // Skip list/reader shortcuts while any overlay owns the keyboard.
-      // `.hl-popover` is the highlight edit dialog inside the reader and
-      // `.hl-toolbar` is the floating colour toolbar shown when text is
-      // selected: without them here, j/k would navigate away (destroying the
-      // overlay — and, for the toolbar, the live selection the user was about
-      // to highlight), s/u/b would act on the article, and Escape would close
-      // the AI drawer instead of just the overlay.
+      // Skip list/reader shortcuts while any overlay owns the keyboard:
+      // without them here, j/k would navigate away (destroying the overlay),
+      // s/u/b would act on the article, and Escape would close the AI drawer
+      // instead of just the overlay.
       if (
         document.querySelector(
           ".cp-backdrop, .settings-backdrop, .modal-backdrop, .ctx-menu, .tag-picker, .hl-popover, .hl-toolbar",

@@ -163,29 +163,6 @@ pub struct ArticleDetail {
     pub tags: Vec<Tag>,
 }
 
-/// A user highlight / annotation pinned to a span of an article's rendered
-/// plain text (feature F7). `text_offset` plus `prefix` / `suffix` form a
-/// resilient anchor: the offset is tried first, the context window second.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Highlight {
-    pub id: i64,
-    pub article_id: i64,
-    /// The highlighted text itself.
-    pub quote: String,
-    /// A short window of text immediately before the quote (for re-anchoring).
-    pub prefix: String,
-    /// A short window of text immediately after the quote (for re-anchoring).
-    pub suffix: String,
-    /// Character offset of the quote within the article's plain-text render.
-    pub text_offset: i64,
-    /// Palette key resolved to a colour by the frontend.
-    pub color: String,
-    /// Optional user note; an empty string means no note.
-    pub note: String,
-    pub created_at: String,
-}
-
 /// Filters for the article list. Mirrors the sidebar selection in the UI.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "value")]

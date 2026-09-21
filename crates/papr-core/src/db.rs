@@ -1771,7 +1771,7 @@ pub fn preview_rule(
 /// the number of articles acted on.
 ///
 /// `skip` *deletes* its matches — the stored-article equivalent of dropping the
-/// article at ingestion. FK `ON DELETE CASCADE` (enclosures, highlights, tags)
+/// article at ingestion. FK `ON DELETE CASCADE` (enclosures, tags)
 /// and the `articles_fts_ad` trigger keep dependent rows and the FTS index in
 /// sync, the same path retention cleanup relies on. `read` / `star` set the
 /// matching flag and skip rows that already carry it, so the returned count is
@@ -1809,115 +1809,6 @@ pub fn smart_counts(conn: &Connection) -> AppResult<(i64, i64, i64)> {
         [],
         |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
     )?)
-}
-
-// ─────────────────────────── highlights ───────────────────────────
-
-const HIGHLIGHT_COLS: &str =
-    "id, article_id, quote, prefix, suffix, text_offset, color, note, created_at";
-
-fn row_to_highlight(r: &rusqlite::Row) -> rusqlite::Result<Highlight> {
-    Ok(Highlight {
-        id: r.get(0)?,
-        article_id: r.get(1)?,
-        quote: r.get(2)?,
-        prefix: r.get(3)?,
-        suffix: r.get(4)?,
-        text_offset: r.get(5)?,
-        color: r.get(6)?,
-        note: r.get(7)?,
-        created_at: r.get(8)?,
-    })
-}
-
-/// The fields needed to create a highlight — everything in [`Highlight`]
-/// except the database-assigned `id` and `created_at`. Grouping the anchor
-/// fields (which are all `&str` and otherwise trivially swappable) into one
-/// named value keeps `insert_highlight` calls unambiguous.
-pub struct NewHighlight<'a> {
-    pub article_id: i64,
-    pub quote: &'a str,
-    pub prefix: &'a str,
-    pub suffix: &'a str,
-    pub text_offset: i64,
-    pub color: &'a str,
-    pub note: &'a str,
-}
-
-/// Insert a highlight and return its new id.
-pub fn insert_highlight(conn: &Connection, h: &NewHighlight) -> AppResult<i64> {
-    conn.execute(
-        "INSERT INTO highlights(article_id, quote, prefix, suffix, text_offset, color, note)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-        params![
-            h.article_id,
-            h.quote,
-            h.prefix,
-            h.suffix,
-            h.text_offset,
-            h.color,
-            h.note
-        ],
-    )?;
-    Ok(conn.last_insert_rowid())
-}
-
-/// All highlights for one article, oldest first (their reading order).
-pub fn list_highlights(conn: &Connection, article_id: i64) -> AppResult<Vec<Highlight>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {HIGHLIGHT_COLS} FROM highlights
-         WHERE article_id = ?1 ORDER BY text_offset, id"
-    ))?;
-    let rows = stmt
-        .query_map(params![article_id], row_to_highlight)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Every highlight across all articles — used by the Highlights browser.
-pub fn list_all_highlights(conn: &Connection) -> AppResult<Vec<Highlight>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {HIGHLIGHT_COLS} FROM highlights ORDER BY created_at DESC, id DESC"
-    ))?;
-    let rows = stmt
-        .query_map([], row_to_highlight)?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
-/// Fetch one highlight by id, if it exists.
-#[allow(dead_code)] // exercised by the db tests; kept as a complete CRUD API.
-pub fn get_highlight(conn: &Connection, id: i64) -> AppResult<Option<Highlight>> {
-    Ok(conn
-        .query_row(
-            &format!("SELECT {HIGHLIGHT_COLS} FROM highlights WHERE id = ?1"),
-            params![id],
-            row_to_highlight,
-        )
-        .optional()?)
-}
-
-/// Replace a highlight's note text (an empty string clears it).
-pub fn update_highlight_note(conn: &Connection, id: i64, note: &str) -> AppResult<()> {
-    conn.execute(
-        "UPDATE highlights SET note = ?2 WHERE id = ?1",
-        params![id, note],
-    )?;
-    Ok(())
-}
-
-/// Change a highlight's colour (a palette key).
-pub fn set_highlight_color(conn: &Connection, id: i64, color: &str) -> AppResult<()> {
-    conn.execute(
-        "UPDATE highlights SET color = ?2 WHERE id = ?1",
-        params![id, color],
-    )?;
-    Ok(())
-}
-
-pub fn delete_highlight(conn: &Connection, id: i64) -> AppResult<()> {
-    conn.execute("DELETE FROM highlights WHERE id = ?1", params![id])?;
-    Ok(())
 }
 
 // ─────────────────────────── settings ───────────────────────────
@@ -1999,16 +1890,11 @@ pub fn cleanup_old_articles(conn: &Connection, days: i64) -> AppResult<usize> {
         return Ok(0);
     }
     // Retention deletes only articles the user has not signalled they want to
-    // keep. Starred and read-later are explicit "keep" flags; an article the
-    // user has *highlighted* carries the same intent — the highlights table
-    // cascade-deletes with the article (`ON DELETE CASCADE`), so purging a
-    // highlighted-but-read article would silently destroy that hand-made
-    // annotation layer (feature F7). Exempt any article with highlights.
+    // keep: starred and read-later are explicit "keep" flags.
     //
     // The purge condition — shared verbatim by the tombstone INSERT and the
     // DELETE so the two select exactly the same rows.
     const PURGE_WHERE: &str = "is_starred = 0 AND read_later = 0 AND is_read = 1
-           AND NOT EXISTS (SELECT 1 FROM highlights WHERE article_id = articles.id)
            AND datetime(COALESCE(published_at, fetched_at)) < datetime('now', ?1)";
     let modifier = format!("-{days} days");
 
@@ -2083,7 +1969,7 @@ mod tests {
     use super::*;
 
     /// An in-memory database with all migrations applied and one feed +
-    /// article inserted, so highlight FKs resolve. Returns `(conn, article_id)`.
+    /// article inserted. Returns `(conn, article_id)`.
     fn test_db() -> (Connection, i64) {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
@@ -2308,140 +2194,6 @@ mod tests {
         let updates = card_image_backfill_scan(&conn).unwrap();
         assert_eq!(updates, vec![(id, "https://ex.com/blank.jpg".into())]);
     }
-
-    /// Compact `NewHighlight` builder for the highlight tests.
-    fn hl<'a>(
-        article_id: i64,
-        quote: &'a str,
-        prefix: &'a str,
-        suffix: &'a str,
-        text_offset: i64,
-        color: &'a str,
-        note: &'a str,
-    ) -> NewHighlight<'a> {
-        NewHighlight {
-            article_id,
-            quote,
-            prefix,
-            suffix,
-            text_offset,
-            color,
-            note,
-        }
-    }
-
-    #[test]
-    fn fresh_feed_has_no_last_fetched_until_touched() {
-        let (conn, _) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT id FROM feeds", [], |r| r.get(0))
-            .unwrap();
-        // A just-inserted feed has never been fetched.
-        assert_eq!(feed_last_fetched(&conn, feed_id).unwrap(), None);
-        // `touch_feed` (the same call `add_feed` makes after its initial
-        // fetch) records the fetch time, so the feed no longer reads as
-        // "never refreshed".
-        touch_feed(&conn, feed_id).unwrap();
-        assert!(feed_last_fetched(&conn, feed_id).unwrap().is_some());
-    }
-
-    #[test]
-    fn refine_source_type_promotes_rss_but_never_demotes() {
-        let (conn, _) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT id FROM feeds", [], |r| r.get(0))
-            .unwrap();
-        let kind = |c: &Connection| -> String {
-            c.query_row("SELECT source_type FROM feeds WHERE id = ?1", params![feed_id], |r| {
-                r.get(0)
-            })
-            .unwrap()
-        };
-        // The test feed starts generic.
-        assert_eq!(kind(&conn), "rss");
-
-        // A no-op when the refined kind is still `Rss`.
-        refine_feed_source_type(&conn, feed_id, SourceType::Rss).unwrap();
-        assert_eq!(kind(&conn), "rss");
-
-        // A genuine kind promotes the still-generic feed.
-        refine_feed_source_type(&conn, feed_id, SourceType::Podcast).unwrap();
-        assert_eq!(kind(&conn), "podcast");
-
-        // Once classified, a later call must not churn the type — the
-        // `WHERE source_type = 'rss'` guard makes this strictly a promotion.
-        refine_feed_source_type(&conn, feed_id, SourceType::Mastodon).unwrap();
-        assert_eq!(kind(&conn), "podcast");
-    }
-
-    #[test]
-    fn insert_and_list_highlight() {
-        let (conn, aid) = test_db();
-        let id = insert_highlight(&conn, &hl(aid, "quoted text", "pre", "suf", 12, "yellow", ""))
-            .unwrap();
-        let all = list_highlights(&conn, aid).unwrap();
-        assert_eq!(all.len(), 1);
-        assert_eq!(all[0].id, id);
-        assert_eq!(all[0].quote, "quoted text");
-        assert_eq!(all[0].prefix, "pre");
-        assert_eq!(all[0].suffix, "suf");
-        assert_eq!(all[0].text_offset, 12);
-        assert_eq!(all[0].color, "yellow");
-        assert_eq!(all[0].note, "");
-    }
-
-    #[test]
-    fn highlights_ordered_by_offset() {
-        let (conn, aid) = test_db();
-        insert_highlight(&conn, &hl(aid, "third", "", "", 90, "yellow", "")).unwrap();
-        insert_highlight(&conn, &hl(aid, "first", "", "", 10, "yellow", "")).unwrap();
-        insert_highlight(&conn, &hl(aid, "second", "", "", 50, "yellow", "")).unwrap();
-        let quotes: Vec<String> = list_highlights(&conn, aid)
-            .unwrap()
-            .into_iter()
-            .map(|h| h.quote)
-            .collect();
-        assert_eq!(quotes, ["first", "second", "third"]);
-    }
-
-    #[test]
-    fn update_note_and_color() {
-        let (conn, aid) = test_db();
-        let id = insert_highlight(&conn, &hl(aid, "q", "", "", 0, "yellow", "")).unwrap();
-        update_highlight_note(&conn, id, "a thought").unwrap();
-        set_highlight_color(&conn, id, "green").unwrap();
-        let h = get_highlight(&conn, id).unwrap().unwrap();
-        assert_eq!(h.note, "a thought");
-        assert_eq!(h.color, "green");
-    }
-
-    #[test]
-    fn delete_highlight_removes_it() {
-        let (conn, aid) = test_db();
-        let id = insert_highlight(&conn, &hl(aid, "q", "", "", 0, "yellow", "")).unwrap();
-        delete_highlight(&conn, id).unwrap();
-        assert!(list_highlights(&conn, aid).unwrap().is_empty());
-        assert!(get_highlight(&conn, id).unwrap().is_none());
-    }
-
-    #[test]
-    fn highlights_cascade_on_article_delete() {
-        let (conn, aid) = test_db();
-        insert_highlight(&conn, &hl(aid, "q", "", "", 0, "yellow", "")).unwrap();
-        conn.execute("DELETE FROM articles WHERE id = ?1", params![aid])
-            .unwrap();
-        assert!(list_highlights(&conn, aid).unwrap().is_empty());
-    }
-
-    #[test]
-    fn list_all_highlights_spans_articles() {
-        let (conn, aid) = test_db();
-        insert_highlight(&conn, &hl(aid, "one", "", "", 0, "yellow", "")).unwrap();
-        insert_highlight(&conn, &hl(aid, "two", "", "", 5, "green", "noted")).unwrap();
-        assert_eq!(list_all_highlights(&conn).unwrap().len(), 2);
-    }
-
-    // ── FTS query building ───────────────────────────────────────────
 
     #[test]
     fn fts_query_and_joins_explicit_search_terms() {
@@ -3024,46 +2776,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(kept, 2, "starred / read-later articles are never purged");
-    }
-
-    #[test]
-    fn cleanup_keeps_highlighted_articles() {
-        // A read article the user has highlighted must survive retention: the
-        // highlights cascade-delete with the article, so purging it would
-        // silently destroy the user's annotations. An unhighlighted read
-        // article of the same age is still purged.
-        let (conn, _fixture) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT id FROM feeds", [], |r| r.get(0))
-            .unwrap();
-        let old = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
-        insert_read_article_published(&conn, feed_id, "annotated", &old);
-        insert_read_article_published(&conn, feed_id, "plain", &old);
-
-        let annotated_id: i64 = conn
-            .query_row("SELECT id FROM articles WHERE guid = 'annotated'", [], |r| {
-                r.get(0)
-            })
-            .unwrap();
-        insert_highlight(
-            &conn,
-            &hl(annotated_id, "kept quote", "", "", 0, "yellow", ""),
-        )
-        .unwrap();
-
-        let removed = cleanup_old_articles(&conn, 30).unwrap();
-        assert_eq!(removed, 1, "only the unhighlighted read article is purged");
-
-        let surviving: Vec<String> = conn
-            .prepare("SELECT guid FROM articles WHERE guid IN ('annotated','plain')")
-            .unwrap()
-            .query_map([], |r| r.get(0))
-            .unwrap()
-            .collect::<Result<_, _>>()
-            .unwrap();
-        assert_eq!(surviving, ["annotated"], "the highlighted article is kept");
-        // And its highlights are intact, not cascade-deleted.
-        assert_eq!(list_highlights(&conn, annotated_id).unwrap().len(), 1);
     }
 
     #[test]

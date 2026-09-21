@@ -1,7 +1,7 @@
 // Trigger a browser download of in-memory content.
 //
-// No file-dialog plugin is bundled, so exports (OPML, highlight Markdown) are
-// offered to the user as a webview download via a synthetic <a download>.
+// No file-dialog plugin is bundled, so exports (OPML) are offered to the user
+// as a webview download via a synthetic <a download>.
 //
 // Two details matter for this to work reliably inside Tauri's WKWebView (the
 // macOS webview is WebKit, not Chromium):

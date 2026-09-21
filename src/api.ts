@@ -11,7 +11,6 @@ import type {
   DiscoveryResult,
   Feed,
   Folder,
-  Highlight,
   RefreshProgress,
   Rule,
   RuleAction,
@@ -268,29 +267,6 @@ export const applyRuleToExisting = (
   action: RuleAction,
 ) =>
   invoke<number>("apply_rule_to_existing", { feedId, field, query, action });
-
-// ── highlights / annotations (F7) ──
-export interface NewHighlight {
-  articleId: number;
-  quote: string;
-  prefix: string;
-  suffix: string;
-  textOffset: number;
-  color: string;
-  note: string;
-}
-export const createHighlight = (h: NewHighlight) =>
-  invoke<number>("create_highlight", { ...h });
-export const listHighlights = (articleId: number) =>
-  invoke<Highlight[]>("list_highlights", { articleId });
-export const listAllHighlights = () =>
-  invoke<Highlight[]>("list_all_highlights");
-export const updateHighlightNote = (id: number, note: string) =>
-  invoke<void>("update_highlight_note", { id, note });
-export const setHighlightColor = (id: number, color: string) =>
-  invoke<void>("set_highlight_color", { id, color });
-export const deleteHighlight = (id: number) =>
-  invoke<void>("delete_highlight", { id });
 
 // ── in-app original-page view (issue #49) ──
 // A native child webview overlaid on the reading area. Bounds are logical
