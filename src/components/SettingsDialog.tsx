@@ -76,10 +76,14 @@ export default function SettingsDialog({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        e.stopPropagation();
-        onClose();
-      }
+      if (e.key !== "Escape") return;
+      // A nested popover that marks itself (the font picker's dropdown) owns
+      // Escape while it is open: one press closes the popover, the next one
+      // closes the dialog. Without this the capture phase below would shut the
+      // whole dialog before the popover could ever see the key.
+      if (document.querySelector("[data-owns-escape]")) return;
+      e.stopPropagation();
+      onClose();
     };
     window.addEventListener("keydown", onKey, true);
     return () => window.removeEventListener("keydown", onKey, true);

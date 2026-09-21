@@ -1,12 +1,16 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import * as api from "../api";
 import {
-  BUNDLED_READER_FONTS,
+  mergeFontFamilies,
+  quoteFontFamily,
   readerFontFamilyOf,
-} from "../store";
+  readerFontIdOf,
+} from "../lib/readerFont";
+import { clampToViewport } from "../lib/viewport";
+import { useDismiss } from "../hooks/useDismiss";
 import { NO_AUTOCORRECT } from "../lib/inputProps";
 import Icon from "./Icon";
 
@@ -14,6 +18,12 @@ import Icon from "./Icon";
  *  and an unbounded list janks the scroll. The filter narrows it well below
  *  this in practice. */
 const MAX_ROWS = 60;
+
+/** Panel footprint for the viewport clamp below: `width` matches the CSS, and
+ *  `height` is the search row (~31px), the list's 240px cap plus its padding,
+ *  and the border. Same fixed-footprint approach as TagPicker. */
+const PANEL_WIDTH = 250;
+const PANEL_HEIGHT = 284;
 
 /**
  * A combobox over the host's installed font families (plus the app's own
@@ -41,6 +51,8 @@ export default function FontPicker({
   const popRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const listId = useId();
+  const optionId = (i: number) => `${listId}-opt-${i}`;
 
   const fonts = useQuery({
     queryKey: ["system-fonts"],
@@ -48,50 +60,67 @@ export default function FontPicker({
     staleTime: Infinity,
   });
 
-  // Every entry the picker can offer: the app default first, then the bundled
-  // built-ins (so an install whose font scan failed still shows the three app
-  // typefaces), then the host's families. The default is a synthetic row —
-  // committing it clears the stored value.
-  const options = useMemo(() => {
-    const host = fonts.data ?? [];
-    const bundled = BUNDLED_READER_FONTS.map((f) => f.family);
-    const seen = new Set(bundled);
-    const merged = [...bundled];
-    for (const f of host) {
-      if (!seen.has(f)) {
-        seen.add(f);
-        merged.push(f);
-      }
-    }
-    return merged;
-  }, [fonts.data]);
+  // A failed scan — a rejected `invoke`, e.g. a backend without the command —
+  // still leaves the bundled families usable, so report it instead of taking
+  // the control away from the user.
+  useEffect(() => {
+    if (fonts.isError) console.error("system font scan failed", fonts.error);
+  }, [fonts.isError, fonts.error]);
 
-  // `""` is the synthetic "System" row and always leads, even when a query
-  // would otherwise filter it out — the default must stay reachable.
-  const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const rest = options.filter((f) => !q || f.toLowerCase().includes(q));
-    return ["", ...rest].slice(0, MAX_ROWS);
-  }, [options, query]);
+  // Every entry the picker can offer: the app's bundled typefaces first (so an
+  // install whose scan failed still shows them), then the host's families.
+  const families = useMemo(() => mergeFontFamilies(fonts.data ?? []), [fonts.data]);
 
+  const systemLabel = t("settings.reading.fontSystem");
   // The row the stored value points at, so reopening the list lands on it.
   const selectedFamily = readerFontFamilyOf(value);
 
-  useEffect(() => setActive(0), [query]);
+  // `""` is the synthetic "System" row. It leads whenever it matches the query
+  // — including an empty one — so the default stays reachable, but a query that
+  // matches no family shows the empty hint rather than leaving it as the only
+  // row to press Enter on.
+  const rows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const matches = families.filter((f) => !q || f.toLowerCase().includes(q));
+    const system = !q || systemLabel.toLowerCase().includes(q);
+    return (system ? ["", ...matches] : matches).slice(0, MAX_ROWS);
+  }, [families, query, systemLabel]);
 
+  const closePanel = useCallback(() => {
+    setOpen(false);
+    setQuery("");
+  }, []);
+
+  /** Closing from a key press hands focus back to the trigger: the search input
+   *  is about to unmount, and the trigger sits inside the Settings dialog's
+   *  focus trap while the portalled panel does not. Pointer dismissals keep
+   *  whatever focus the click gave the element underneath. */
+  const closeFromKeyboard = useCallback(() => {
+    closePanel();
+    triggerRef.current?.focus();
+  }, [closePanel]);
+
+  // Outside click / focus-out dismissal, as everywhere else: the panel is
+  // portalled out of `rootRef`, so it is handed over as an owned subtree.
+  useDismiss(rootRef, closePanel, { enabled: open, portalRef: popRef });
+
+  // The Settings dialog claims Escape with a window-level *capture* listener,
+  // so a handler on the input can never run first. The dialog yields Escape to
+  // any element marked `data-owns-escape` (see SettingsDialog), which is what
+  // lets this listener close just the panel — a second Escape closes the dialog.
   useEffect(() => {
     if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      // The panel is portalled to <body>, so it is not inside `rootRef` —
-      // check it explicitly before treating a press as "outside".
-      const inside =
-        rootRef.current?.contains(e.target as Node) ||
-        popRef.current?.contains(e.target as Node);
-      if (!inside) setOpen(false);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      e.stopPropagation();
+      e.preventDefault();
+      closeFromKeyboard();
     };
-    document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
-  }, [open]);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [open, closeFromKeyboard]);
+
+  useEffect(() => setActive(0), [query]);
 
   // Keep the highlighted row visible as arrow keys move it. The panel is
   // portalled, so `scrollIntoView` would scroll the *window*; scroll the list.
@@ -104,11 +133,11 @@ export default function FontPicker({
     const overBottom = overTop + row.offsetHeight - list.clientHeight;
     if (overBottom > 0) list.scrollTop += overBottom;
     else if (overTop < list.scrollTop) list.scrollTop = overTop;
-  }, [active, open]);
+  }, [active, open, rows.length]);
 
-  // The panel is portalled to <body> because `.settings-scroll` clips
-  // absolutely-positioned descendants once it starts scrolling — without the
-  // portal the dropdown's lower rows would be cut by the container edge.
+  // The panel is portalled to <body> because `.settings-scroll` is a
+  // `contain: layout paint` box once it starts scrolling — a fixed-position
+  // descendant would be laid out against it and clip the dropdown's lower rows.
   const [popPos, setPopPos] = useState<{ top: number; left: number } | null>(null);
   useEffect(() => {
     if (!open) {
@@ -119,48 +148,43 @@ export default function FontPicker({
     if (!trigger) return;
     const place = () => {
       const r = trigger.getBoundingClientRect();
-      setPopPos({ top: r.bottom + 5, left: r.left });
+      // Clamp with the shared two-sided helper: anchored just under the
+      // trigger, the panel would otherwise spill past the window's bottom (or
+      // its right edge in a narrow window) with its rows unreachable.
+      setPopPos(
+        clampToViewport({
+          x: r.left,
+          y: r.bottom + 5,
+          width: PANEL_WIDTH,
+          height: PANEL_HEIGHT,
+          margin: 8,
+        }),
+      );
     };
     place();
-    // A scroll anywhere above (the settings list itself scrolls) shifts the
-    // trigger; follow it. The close-on-outside-click handler below still owns
-    // dismissal.
-    const onScroll = () => place();
-    window.addEventListener("scroll", onScroll, true);
-    return () => window.removeEventListener("scroll", onScroll, true);
+    // A scroll anywhere above (the settings list itself scrolls) or a resize
+    // moves the trigger; follow both. Dismissal stays with useDismiss.
+    const follow = () => place();
+    window.addEventListener("scroll", follow, true);
+    window.addEventListener("resize", follow);
+    return () => {
+      window.removeEventListener("scroll", follow, true);
+      window.removeEventListener("resize", follow);
+    };
   }, [open]);
-
-  if (fonts.isError) {
-    // A failed scan still leaves the bundled entries usable; report once,
-    // outside render, so the retry can surface a fresh error.
-    console.error("system font scan failed", fonts.error);
-    return null;
-  }
 
   const commit = (family: string) => {
     // The bundled entries are stored under their legacy ids so an install that
     // predates the picker keeps resolving; a host family is stored verbatim.
-    const id =
-      BUNDLED_READER_FONTS.find((f) => f.family === family)?.id ?? family;
-    onChange(id);
-    setOpen(false);
-    setQuery("");
-  };
-
-  const reset = () => {
-    onChange("");
-    setOpen(false);
-    setQuery("");
+    onChange(readerFontIdOf(family));
+    closeFromKeyboard();
   };
 
   const onKey = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
-      if (!open) {
-        setOpen(true);
-        return;
-      }
-      const last = filtered.length - 1;
+      const last = rows.length - 1;
+      if (last < 0) return;
       setActive((a) =>
         e.key === "ArrowDown" ? (a >= last ? 0 : a + 1) : a <= 0 ? last : a - 1,
       );
@@ -168,75 +192,71 @@ export default function FontPicker({
     }
     if (e.key === "Enter") {
       e.preventDefault();
-      if (open) commit(filtered[active] ?? "");
-      return;
-    }
-    if (e.key === "Escape") {
-      e.preventDefault();
-      setOpen(false);
-      setQuery("");
+      // Nothing highlighted means the query matched nothing. Committing here
+      // would fall back to the leading default row and silently reset the font.
+      const family = rows[active];
+      if (family !== undefined) commit(family);
       return;
     }
     if (e.key === "Tab") {
-      setOpen(false);
+      // Let the default Tab action run on from the trigger, so the dialog's
+      // focus trap resumes inside its own subtree.
+      closeFromKeyboard();
     }
   };
 
   return (
-    <div
-      className={`font-picker ${open ? "open" : ""}`}
-      ref={rootRef}
-    >
+    <div className={`font-picker ${open ? "open" : ""}`} ref={rootRef}>
       <button
         type="button"
         ref={triggerRef}
-        className="font-picker-trigger s-select"
+        className={`font-picker-trigger s-select ${value ? "has-reset" : ""}`}
         aria-label={ariaLabel}
         aria-haspopup="listbox"
         aria-expanded={open}
-        onClick={() => {
-          setOpen((o) => !o);
-          inputRef.current?.focus();
-        }}
+        aria-controls={listId}
+        onClick={() => setOpen((o) => !o)}
       >
         <span
           className="font-picker-name"
-          style={selectedFamily ? { fontFamily: `'${selectedFamily}'` } : undefined}
+          style={selectedFamily ? { fontFamily: quoteFontFamily(selectedFamily) } : undefined}
         >
-          {selectedFamily || t("settings.reading.fontSystem")}
+          {selectedFamily || systemLabel}
         </span>
-        {value && (
-          <span
-            className="font-picker-reset"
-            role="button"
-            tabIndex={0}
-            title={t("settings.reading.fontReset")}
-            onClick={(e) => {
-              e.stopPropagation();
-              reset();
-            }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                e.stopPropagation();
-                reset();
-              }
-            }}
-          >
-            <Icon name="x" size={11} />
-          </span>
-        )}
       </button>
+      {/* A sibling rather than a nested span: a button inside a button is
+          invalid, and the reset needs to be its own focus stop. */}
+      {value && (
+        <button
+          type="button"
+          className="font-picker-reset"
+          aria-label={t("settings.reading.fontReset")}
+          title={t("settings.reading.fontReset")}
+          onClick={() => {
+            onChange("");
+            closeFromKeyboard();
+          }}
+        >
+          <Icon name="x" size={11} />
+        </button>
+      )}
       {open && popPos && createPortal(
         <div
           className="font-picker-pop"
           ref={popRef}
           style={{ top: popPos.top, left: popPos.left }}
+          data-owns-escape=""
         >
           <input
             ref={inputRef}
             className="font-picker-search"
             type="text"
+            role="combobox"
+            aria-label={ariaLabel ?? t("settings.reading.bodyFont")}
+            aria-expanded
+            aria-controls={listId}
+            aria-autocomplete="list"
+            aria-activedescendant={rows[active] !== undefined ? optionId(active) : undefined}
             placeholder={t("settings.reading.fontSearch")}
             value={query}
             autoFocus
@@ -244,31 +264,33 @@ export default function FontPicker({
             onKeyDown={onKey}
             {...NO_AUTOCORRECT}
           />
-          <div className="font-picker-list" ref={listRef} role="listbox">
-            {filtered.map((family, i) => (
-              <div
-                key={family || "system"}
-                className={`font-picker-row ${i === active ? "active" : ""} ${
-                  family === selectedFamily ? "selected" : ""
-                }`}
-                role="option"
-                aria-selected={family === selectedFamily}
-                style={family ? { fontFamily: `'${family}'` } : undefined}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  commit(family);
-                }}
-                onMouseEnter={() => setActive(i)}
-              >
-                {family || t("settings.reading.fontSystem")}
-              </div>
-            ))}
-            {filtered.length === 0 && (
-              <div className="font-picker-empty">
-                {t("settings.reading.fontEmpty")}
-              </div>
-            )}
-          </div>
+          {rows.length === 0 ? (
+            <div className="font-picker-empty">
+              {t("settings.reading.fontEmpty")}
+            </div>
+          ) : (
+            <div className="font-picker-list" id={listId} ref={listRef} role="listbox">
+              {rows.map((family, i) => (
+                <div
+                  key={family || "system"}
+                  id={optionId(i)}
+                  className={`font-picker-row ${i === active ? "active" : ""} ${
+                    family === selectedFamily ? "selected" : ""
+                  }`}
+                  role="option"
+                  aria-selected={family === selectedFamily}
+                  style={family ? { fontFamily: quoteFontFamily(family) } : undefined}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    commit(family);
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                >
+                  {family || systemLabel}
+                </div>
+              ))}
+            </div>
+          )}
         </div>,
         document.body,
       )}

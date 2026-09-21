@@ -38,9 +38,15 @@ pub fn set_native_backing(window: tauri::WebviewWindow, r: u8, g: u8, b: u8) {
 pub async fn list_system_fonts() -> Vec<String> {
     // The first call walks every font directory and parses each file, so keep
     // it off the async runtime; later calls hit the cache and are trivial.
-    tokio::task::spawn_blocking(crate::fonts::list_families)
-        .await
-        .unwrap_or_default()
+    match tokio::task::spawn_blocking(crate::fonts::list_families).await {
+        Ok(families) => families,
+        // A panic while scanning leaves the reader with the bundled families
+        // only; the picker cannot tell why, so record it here.
+        Err(e) => {
+            log::warn!("system font scan failed: {e}");
+            Vec::new()
+        }
+    }
 }
 
 // ─────────────────────────── folders ───────────────────────────

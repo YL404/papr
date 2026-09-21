@@ -1872,21 +1872,37 @@ button { font-family: inherit; }
   width: 200px;
   text-align: left;
 }
+/* Once a value is set, the reset button owns the caret's corner: drop the
+   caret and reserve its space for the name. */
+.font-picker-trigger.has-reset {
+  background-image: none;
+  padding-right: 30px;
+}
+.font-picker.open .font-picker-trigger { border-color: var(--ink-2); }
 .font-picker-name {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* A real <button> sitting over the trigger's right edge — nested inside the
+   trigger it would be interactive content inside a <button>, which is invalid
+   and hides it from the keyboard. */
 .font-picker-reset {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 17px; height: 17px;
-  margin: 0 -4px 0 auto;
+  padding: 0;
+  border: 0;
+  background: none;
   border-radius: 50%;
   color: var(--muted);
-  flex: none;
+  cursor: pointer;
 }
 .font-picker-reset:hover { background: var(--hover); color: var(--ink); }
 .font-picker-pop {
