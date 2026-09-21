@@ -1254,12 +1254,12 @@ button { font-family: inherit; }
      instead of hugging the border. */
   padding: 14px 28px;
   /* Typeface *and* size follow Settings → Reading (`--reader-font` /
-     `--reader-size`, both set on :root by App.tsx). The summary is secondary
-     content, so it keeps the ~3/4 proportion it has always had against the
-     article body — 12.9px against the 17px default — instead of matching the
-     body outright and competing with it. */
+     `--reader-size`, both set on :root by App.tsx). The summary stays a step
+     below the article body — 14.5px against the 17px default — so it reads as
+     a companion block rather than a second article, while still growing with
+     the reader's own size setting. */
   font-family: var(--reader-font);
-  font-size: calc(var(--reader-size, 17px) * 0.76);
+  font-size: calc(var(--reader-size, 17px) * 0.85);
   line-height: 1.6;
   color: var(--ink-2);
 }
