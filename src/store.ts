@@ -166,6 +166,9 @@ interface UiState {
 
   // transient view modes
   focusMode: boolean;
+  /** Wide reading column, toggled from the reader toolbar or the W shortcut
+   *  (the F/W pair). Session-scoped like `focusMode` — not persisted. */
+  wide: boolean;
   /** Bumped to ask the reader to generate an AI summary for the open article
    *  (the I shortcut, the command palette, the reader's context menu). The
    *  summary itself is an inline section at the top of the article that owns
@@ -199,6 +202,7 @@ interface UiState {
   setPref: (patch: Partial<Prefs>) => void;
 
   setFocusMode: (v: boolean) => void;
+  setWide: (v: boolean) => void;
   requestAiSummary: () => void;
   setModalOpen: (v: boolean) => void;
   setMenuOpen: (v: boolean) => void;
@@ -316,6 +320,7 @@ export const useUi = create<UiState>((set, get) => ({
   prefs: loadPrefs(),
 
   focusMode: false,
+  wide: false,
   aiSummaryRequest: 0,
   modalOpen: false,
   menuOpen: false,
@@ -384,6 +389,7 @@ export const useUi = create<UiState>((set, get) => ({
   },
 
   setFocusMode: (focusMode) => set({ focusMode }),
+  setWide: (wide) => set({ wide }),
   requestAiSummary: () =>
     set((s) => ({ aiSummaryRequest: s.aiSummaryRequest + 1 })),
   setModalOpen: (modalOpen) => set({ modalOpen }),

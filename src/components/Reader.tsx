@@ -198,7 +198,8 @@ export default function Reader({ onToast }: Props) {
   // Sites that set X-Frame-Options / CSP frame-ancestors refuse to load this
   // way — the in-frame hint points those back to "open in browser".
   const [viewMode, setViewMode] = useState<"reader" | "web">("reader");
-  const [wide, setWide] = useState(false);
+  const wide = useUi((s) => s.wide);
+  const setWide = useUi((s) => s.setWide);
   const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number;
@@ -900,7 +901,7 @@ export default function Reader({ onToast }: Props) {
           title={t("reader.tbWideMode")}
           aria-label={t("reader.tbWideMode")}
           aria-pressed={wide}
-          onClick={() => setWide((v) => !v)}
+          onClick={() => setWide(!wide)}
         >
           <Icon name="wide" size={16} />
         </button>
@@ -1268,6 +1269,28 @@ export default function Reader({ onToast }: Props) {
   );
 }
 
+/** A body shorter than this gains nothing from a model summary — a one-line
+ *  link post has no substance to condense. */
+const SUMMARY_MIN_CHARS = 100;
+
+/** Gate on article length: too short, and no section renders at all — so the
+ *  model call it invites never happens. A wrapper rather than an early return
+ *  inside the section: the section's hooks must run unconditionally, and its
+ *  body can still arrive after mount (extracted content is fetched lazily),
+ *  which would otherwise change the hook count between renders of one
+ *  instance. */
+function AISummary({ article }: { article: ArticleDetail }) {
+  const body = article.extractedHtml || article.contentHtml || "";
+  // Memoised on the body — this re-runs whenever the reader re-renders (a
+  // toolbar toggle, a store update), and parsing the HTML each time is waste.
+  const tooShort = useMemo(
+    () => bodyPlainText(body).trim().length < SUMMARY_MIN_CHARS,
+    [body],
+  );
+  if (tooShort) return null;
+  return <AISummarySection article={article} />;
+}
+
 /** AI summary — a section inline at the top of the article content rather than
  *  an overlay: it reads as part of the article. Nothing is generated until the
  *  user asks for it (the button below, or the I shortcut / command palette /
@@ -1275,19 +1298,24 @@ export default function Reader({ onToast }: Props) {
  *  an article must not silently spend a model call. A finished summary is
  *  persisted by the backend, so revisiting an article shows the stored text
  *  without calling the model again. */
-function AISummary({ article }: { article: ArticleDetail }) {
+function AISummarySection({ article }: { article: ArticleDetail }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  // Initialised from the article's stored summary (if any). The parent keys
+  // the article by id, so a switch remounts this component and re-runs this
+  // initialiser — no separate "reset on article change" effect is needed.
   const [text, setText] = useState<string | null>(article.aiSummary);
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  // The failure detail, shown in the section itself rather than only in the
+  // transient toast — a user who has scrolled on still sees why it failed.
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  // Identifies the latest generate run. Only the run whose generation still
+  // matches may clear `busy` on settle — otherwise a stale run's `finally`
+  // would either wedge the section on the loading state or clobber a newer
+  // run's `busy` flag.
   const runRef = useRef(0);
   const rootRef = useRef<HTMLElement>(null);
-
-  const body = article.extractedHtml || article.contentHtml || "";
-  const cjkLen = (bodyPlainText(body).match(/[\u4e00-\u9fff]/g) || []).length;
-  if (cjkLen > 0 && cjkLen < 100) return null;
 
   const generate = useCallback(() => {
     if (busy) return;

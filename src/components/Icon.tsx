@@ -113,7 +113,7 @@ export default function Icon({
     case "arrow-up":
       return <svg {...p}><path d="M12 19V5M5 12l7-7 7 7" /></svg>;
     case "wide":
-      return <svg {...p}><path d="M8 7 4 12 8 17M16 7 20 12 16 17" /></svg>;
+      return <svg {...p}><path d="M3 12h18M3 12l5-5M3 12l5 5M21 12l-5-5M21 12l-5 5" /></svg>;
     case "eye":
       return <svg {...p}><path d="M2.5 12a10 10 0 0 1 19 0 10 10 0 0 1-19 0z" /><circle cx="12" cy="12" r="3" /></svg>;
     case "eye-off":

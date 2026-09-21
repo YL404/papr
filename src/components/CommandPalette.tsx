@@ -15,6 +15,7 @@ export type CommandAction =
   | "mark-all-read"
   | "toggle-theme"
   | "toggle-focus"
+  | "toggle-wide"
   | "ai-summary"
   | "refresh"
   | "add-feed"
@@ -44,6 +45,7 @@ const ACTIONS: { icon: IconName; labelKey: string; hint: string; action: Command
   { icon: "check-all", labelKey: "commandPalette.actionMarkAllRead", hint: "⇧A", action: "mark-all-read" },
   { icon: "globe", labelKey: "commandPalette.actionToggleTheme", hint: "⇧D", action: "toggle-theme" },
   { icon: "focus", labelKey: "commandPalette.actionToggleFocus", hint: "F", action: "toggle-focus" },
+  { icon: "wide", labelKey: "commandPalette.actionToggleWide", hint: "W", action: "toggle-wide" },
   { icon: "sparkle", labelKey: "commandPalette.actionToggleAi", hint: "I", action: "ai-summary" },
   { icon: "refresh", labelKey: "commandPalette.actionRefresh", hint: modCombo("R"), action: "refresh" },
   { icon: "plus", labelKey: "commandPalette.actionAddFeed", hint: "A", action: "add-feed" },

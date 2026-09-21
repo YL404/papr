@@ -125,6 +125,7 @@
     "actionMarkAllRead": "Mark all in current list as read",
     "actionToggleTheme": "Toggle dark / light theme",
     "actionToggleFocus": "Focus mode",
+    "actionToggleWide": "Wide reading column",
     "actionToggleAi": "AI summary of current article",
     "actionRefresh": "Refresh all feeds",
     "actionAddFeed": "Add feed\u2026",

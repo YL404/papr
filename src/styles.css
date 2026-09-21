@@ -821,7 +821,6 @@ button { font-family: inherit; }
   white-space: nowrap;
   flex-shrink: 0;
 }
-.art-sep { color: var(--muted-2); flex-shrink: 0; }
 .art-spacer { flex: 1; }
 .art-translate-status {
   display: inline-flex;

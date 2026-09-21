@@ -310,6 +310,9 @@ export default function App() {
       case "toggle-focus":
         useUi.getState().setFocusMode(!useUi.getState().focusMode);
         break;
+      case "toggle-wide":
+        useUi.getState().setWide(!useUi.getState().wide);
+        break;
       case "ai-summary":
         if (useUi.getState().selectedArticleId != null)
           useUi.getState().requestAiSummary();
@@ -443,6 +446,7 @@ export default function App() {
           }
           break;
         case "f": e.preventDefault(); st.setFocusMode(!st.focusMode); break;
+        case "w": e.preventDefault(); st.setWide(!st.wide); break;
         case "v": e.preventDefault(); st.toggleUnreadOnly(); break;
         case "a":
           if (e.shiftKey) { e.preventDefault(); markAllRead(); }
