@@ -12,8 +12,6 @@ import Icon from "./Icon";
 interface Props {
   onClose: () => void;
   onToast: (msg: string) => void;
-  /** Feed URL to prefill the feed tab with — set by a `papr://` deep link. */
-  initialUrl?: string;
 }
 
 /** Which kind of source the dialog is currently configuring. */
@@ -36,7 +34,7 @@ function parsePort(raw: string): number {
 }
 
 /** Subscribe to a new source — feed URL or an IMAP newsletter mailbox. */
-export default function AddFeedDialog({ onClose, onToast, initialUrl }: Props) {
+export default function AddFeedDialog({ onClose, onToast }: Props) {
   const { t, i18n } = useTranslation();
   const actions = useArticleActions();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -44,21 +42,9 @@ export default function AddFeedDialog({ onClose, onToast, initialUrl }: Props) {
   const [tab, setTab] = useState<Tab>("feed");
 
   // ── feed tab state ──
-  const [url, setUrl] = useState(initialUrl ?? "");
+  const [url, setUrl] = useState("");
   const [folderId, setFolderId] = useState<number | null>(null);
   const folders = useQuery({ queryKey: ["folders"], queryFn: api.listFolders });
-
-  // A `papr://subscribe` deep link can arrive while the dialog is already
-  // open (the user opened it manually first). `useState(initialUrl)` only
-  // reads the prop on mount, so without this the new feed URL would be
-  // silently dropped. Sync prop changes into the input and surface the feed
-  // tab so the prefilled URL is visible.
-  useEffect(() => {
-    if (initialUrl) {
-      setUrl(initialUrl);
-      setTab("feed");
-    }
-  }, [initialUrl]);
 
   // ── discovery (feature F6): debounced search of the curated directory
   // plus a live page scrape when the query looks like a URL. ──

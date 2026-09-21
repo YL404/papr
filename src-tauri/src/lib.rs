@@ -20,38 +20,9 @@ mod summary;
 mod translate;
 mod tray;
 
-use ingestion::discovery::{self, DeepLink};
 use state::AppState;
 use std::fs;
-use tauri::{Emitter, Manager};
-
-/// Handle every URL delivered through the `papr://` deep-link scheme. A
-/// `papr://subscribe?url=…` link focuses the main window and emits a
-/// `deep-link-subscribe` event the frontend listens for to open the
-/// Add-feed dialog prefilled with the feed URL. Unrecognised links are
-/// ignored. Pure parsing lives in [`discovery::parse_deep_link`].
-///
-/// A cold-start link is delivered to this handler from inside `setup()` —
-/// *before* the webview has loaded and registered its `deep-link-subscribe`
-/// listener — so a bare `emit` would be dropped on the floor and the Add-feed
-/// dialog would never open. The URL is therefore also buffered in `AppState`;
-/// the frontend drains that buffer once on mount, which catches the cold-start
-/// case. A live link, arriving after the listener exists, is delivered by the
-/// `emit`; its buffered copy is simply never drained (the mount has long
-/// passed) and is discarded with the process.
-fn handle_deep_links(app: &tauri::AppHandle, urls: &[String]) {
-    for raw in urls {
-        if let Some(DeepLink::Subscribe { url }) = discovery::parse_deep_link(raw) {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
-            app.state::<AppState>().set_pending_deep_link(url.clone());
-            let _ = app.emit("deep-link-subscribe", url);
-        }
-    }
-}
+use tauri::Manager;
 
 /// Number of read-only connections in the UI query pool.
 const READ_POOL_SIZE: usize = 4;
@@ -63,7 +34,6 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
-        .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
@@ -102,27 +72,6 @@ pub fn run() {
             let dark_shade = db::get_setting(&conn, "dark_shade").ok().flatten();
 
             app.manage(AppState::new(conn, readers, http));
-
-            // ── papr:// deep links (feature F6) ───────────────────────
-            // Registered after `app.manage` so the handler can always reach
-            // `AppState` to buffer a cold-start link. Links opened while the
-            // app is already running arrive here directly; a cold-start link
-            // is delivered the same way once the event loop starts.
-            {
-                use tauri_plugin_deep_link::DeepLinkExt;
-                let handle = app.handle().clone();
-                app.deep_link().on_open_url(move |event| {
-                    let urls: Vec<String> =
-                        event.urls().iter().map(|u| u.to_string()).collect();
-                    handle_deep_links(&handle, &urls);
-                });
-                // On Linux/Windows dev builds, register the scheme at runtime
-                // so `papr://` resolves without a full bundle install.
-                #[cfg(any(windows, target_os = "linux"))]
-                {
-                    let _ = app.deep_link().register("papr");
-                }
-            }
 
             // ── Themed native backing (kills the macOS resize flash) ──
             // `tauri.conf.json` hardcodes a light window background and wry
@@ -264,7 +213,6 @@ pub fn run() {
             commands::freshrss_sync,
             commands::refresh_tray,
             commands::set_native_backing,
-            commands::take_pending_deep_link,
             commands::list_tags,
             commands::create_tag,
             commands::rename_tag,

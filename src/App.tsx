@@ -103,8 +103,6 @@ export default function App() {
     open: false,
   });
   const [addFeed, setAddFeed] = useState(false);
-  // Feed URL handed over by a `papr://subscribe` deep link (browser extension).
-  const [addFeedUrl, setAddFeedUrl] = useState<string | undefined>(undefined);
   // The standalone Explore (curated-directory marketplace) dialog.
   const [explore, setExplore] = useState(false);
   const [newFolder, setNewFolder] = useState(false);
@@ -253,30 +251,6 @@ export default function App() {
   // ── "Settings…" from the menu-bar tray ──
   useEffect(() => {
     const un = listen("tray-open-settings", () => setSettings({ open: true }));
-    return () => {
-      un.then((f) => f());
-    };
-  }, []);
-
-  // ── papr://subscribe deep links from the browser extension (F6) ──
-  useEffect(() => {
-    const un = listen<string>("deep-link-subscribe", (e) => {
-      setAddFeedUrl(e.payload);
-      setAddFeed(true);
-    });
-    // A cold-start link arrives during the backend's `setup()` — before this
-    // listener exists — so the `emit` above is dropped. The backend buffers
-    // that URL; drain it once on mount so a launch-by-deep-link still opens
-    // the Add-feed dialog.
-    api
-      .takePendingDeepLink()
-      .then((url) => {
-        if (url) {
-          setAddFeedUrl(url);
-          setAddFeed(true);
-        }
-      })
-      .catch(() => {});
     return () => {
       un.then((f) => f());
     };
@@ -572,14 +546,7 @@ export default function App() {
       )}
 
       {addFeed && (
-        <AddFeedDialog
-          onClose={() => {
-            setAddFeed(false);
-            setAddFeedUrl(undefined);
-          }}
-          onToast={showToast}
-          initialUrl={addFeedUrl}
-        />
+        <AddFeedDialog onClose={() => setAddFeed(false)} onToast={showToast} />
       )}
 
       {explore && (

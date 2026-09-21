@@ -13,7 +13,6 @@
     "os:default",
     "autostart:allow-enable",
     "autostart:allow-disable",
-    "autostart:allow-is-enabled",
-    "deep-link:default"
+    "autostart:allow-is-enabled"
   ]
 }
