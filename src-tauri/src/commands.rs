@@ -31,6 +31,18 @@ pub fn set_native_backing(window: tauri::WebviewWindow, r: u8, g: u8, b: u8) {
     crate::backing::apply(&window, r, g, b);
 }
 
+/// Every font family installed on the host plus the ones bundled with the app,
+/// for the reader's font picker. The scan is cached for the process lifetime —
+/// see `fonts::list_families`.
+#[tauri::command]
+pub async fn list_system_fonts() -> Vec<String> {
+    // The first call walks every font directory and parses each file, so keep
+    // it off the async runtime; later calls hit the cache and are trivial.
+    tokio::task::spawn_blocking(crate::fonts::list_families)
+        .await
+        .unwrap_or_default()
+}
+
 // ─────────────────────────── folders ───────────────────────────
 
 #[tauri::command]

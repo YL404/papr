@@ -293,8 +293,12 @@
     },
     "reading": {
       "font": "\u30d5\u30a9\u30f3\u30c8",
+      "fontSystem": "システム標準",
+      "fontSearch": "フォントを検索…",
+      "fontEmpty": "該当するフォントがありません",
+      "fontReset": "デフォルトに戻す",
       "bodyFont": "\u672c\u6587\u30d5\u30a9\u30f3\u30c8",
-      "bodyFontDesc": "Hyperlegible \u306f\u5f31\u8996\u306e\u65b9\u306e\u8aad\u307f\u3084\u3059\u3055\u306b\u6700\u9069\u5316\u3055\u308c\u3066\u3044\u307e\u3059",
+      "bodyFontDesc": "本文と AI 要約に適用されます。デバイスにインストール済みのフォントを使用します",
       "serif": "\u660e\u671d\u4f53",
       "sans": "\u30b4\u30b7\u30c3\u30af\u4f53",
       "hyperlegible": "\u9ad8\u5224\u8aad\u6027",

@@ -10,6 +10,7 @@ pub use papr_core::{ai, db, error, extraction, ingestion, models, opml, sanitize
 
 mod backing;
 mod commands;
+mod fonts;
 mod notify;
 mod page_view;
 // The tauri-coupled refresh scheduler (progress channels, AppHandle) — built on
@@ -209,6 +210,7 @@ pub fn run() {
             commands::apply_network_settings,
             commands::refresh_tray,
             commands::set_native_backing,
+            commands::list_system_fonts,
             commands::list_tags,
             commands::create_tag,
             commands::rename_tag,

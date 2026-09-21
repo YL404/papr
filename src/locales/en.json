@@ -293,8 +293,12 @@
     },
     "reading": {
       "font": "Font",
+      "fontSystem": "System default",
+      "fontSearch": "Search fonts…",
+      "fontEmpty": "No matching fonts",
+      "fontReset": "Reset to default",
       "bodyFont": "Body font",
-      "bodyFontDesc": "Hyperlegible is tuned for low-vision readability",
+      "bodyFontDesc": "Applies to the body text and AI summaries; uses the fonts installed on this device",
       "serif": "Serif",
       "sans": "Sans-serif",
       "hyperlegible": "Hyperlegible",

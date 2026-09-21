@@ -40,17 +40,54 @@ export function resolveMode(mode: Mode): ResolvedMode {
 export type Density = "compact" | "cozy" | "spacious";
 export type ViewMode = "list" | "card" | "small-image";
 export type StartupView = "all" | "unread" | "starred" | "last";
-export type ReaderFont = "serif" | "sans" | "hyperlegible";
 
-/** Reader title/body typeface options. `stack` feeds the `--reader-font` CSS
- *  variable; `adjust` nudges the body font-size — sans and Hyperlegible read
- *  visually larger than the serif at the same pixel size, so they shrink a
- *  touch to keep the optical size even across choices. */
-export const READER_FONTS: Record<ReaderFont, { stack: string; adjust: string }> = {
-  serif: { stack: "var(--serif)", adjust: "0px" },
-  sans: { stack: "var(--ui)", adjust: "-1.5px" },
-  hyperlegible: { stack: "'Atkinson Hyperlegible', var(--ui)", adjust: "-1.5px" },
-};
+/** A font family name for the reader's body + AI summary (`""` = the app's
+ *  default serif), chosen from the host's installed fonts. Older installs
+ *  store the legacy enum ids ("serif" / "sans" / "hyperlegible"), which
+ *  `loadReaderFont` migrates forward. */
+export type ReaderFont = string;
+
+/** The built-in reader typefaces. The family names must stay in sync with the
+ *  `@fontsource-variable` bundles in `src/main.tsx` and the CSS stacks below,
+ *  so the picker's first three entries are always resolvable on any host. */
+export const BUNDLED_READER_FONTS: { id: string; family: string }[] = [
+  { id: "serif", family: "Newsreader Variable" },
+  { id: "sans", family: "Inter Tight Variable" },
+  { id: "hyperlegible", family: "Atkinson Hyperlegible" },
+];
+
+function readerFontStack(id: string): string {
+  switch (id) {
+    case "sans":
+      return "var(--ui)";
+    case "hyperlegible":
+      return "'Atkinson Hyperlegible', var(--ui)";
+    default:
+      return "var(--serif)";
+  }
+}
+
+/** Resolve a persisted reader font to the CSS stack the `--reader-font`
+ *  variable holds. An empty value is the app default; a bare legacy id maps to
+ *  its built-in stack; anything else is a family name straight from the host's
+ *  font list, quoted so a name with spaces ("PingFang SC") parses as one family. */
+export function readerFontStackOf(font: string): string {
+  if (!font) return "var(--serif)";
+  if (font === "serif" || font === "sans" || font === "hyperlegible") {
+    return readerFontStack(font);
+  }
+  const family = BUNDLED_READER_FONTS.find((f) => f.id === font)?.family;
+  if (family) return family;
+  return `'${font.replace(/'/g, "")}'`;
+}
+
+/** The display name the settings picker shows for a stored value: the bundled
+ *  entries' family name, or the raw family for a host font. */
+export function readerFontFamilyOf(font: string): string {
+  if (!font) return "";
+  const bundled = BUNDLED_READER_FONTS.find((f) => f.id === font);
+  return bundled?.family ?? font;
+}
 
 /** Valid ranges for the reader appearance sliders — the single source of
  *  truth shared by the Settings sliders, persistence validation, and the
@@ -253,11 +290,13 @@ function legacyModeDefault(): Mode {
 }
 
 /** Resolve the persisted reader font, migrating the pre-0.2 boolean
- *  `useSerif` toggle (serif on/off) to the named-typeface preference. */
+ *  `useSerif` toggle (serif on/off). Any stored value is kept as-is: the
+ *  legacy enum ids ("serif" / "sans" / "hyperlegible") resolve through
+ *  `readerFontStackOf`, every other string is a host font family name. */
 function loadReaderFont(): ReaderFont {
   const v = localStorage.getItem("readerFont");
-  if (v === "serif" || v === "sans" || v === "hyperlegible") return v;
-  return localStorage.getItem("useSerif") === "0" ? "sans" : "serif";
+  if (v) return v;
+  return localStorage.getItem("useSerif") === "0" ? "sans" : "";
 }
 
 function loadPrefs(): Prefs {

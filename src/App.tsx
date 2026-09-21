@@ -7,7 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "./api";
-import { useUi, READER_FONTS, resolveMode, systemPrefersDark } from "./store";
+import { useUi, readerFontStackOf, resolveMode, systemPrefersDark } from "./store";
 import type { Palette, ResolvedMode } from "./store";
 import { useArticleActions } from "./hooks/articleActions";
 import { readCurrentItems } from "./lib/currentList";
@@ -200,9 +200,7 @@ export default function App() {
 
   useEffect(() => {
     const root = document.documentElement.style;
-    const font = READER_FONTS[readerFont];
-    root.setProperty("--reader-font", font.stack);
-    root.setProperty("--reader-font-adjust", font.adjust);
+    root.setProperty("--reader-font", readerFontStackOf(readerFont));
     root.setProperty("--reader-size", `${readerSize}px`);
     root.setProperty("--reader-leading", String(readerLeading / 100));
     root.setProperty("--reader-width", `${readerWidth}px`);

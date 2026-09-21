@@ -17,6 +17,7 @@ import type { Feed } from "../types";
 import Icon, { type IconName } from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
+import FontPicker from "./FontPicker";
 
 interface Props {
   onClose: () => void;
@@ -883,15 +884,7 @@ function ReadingSection() {
           label={t("settings.reading.bodyFont")}
           desc={t("settings.reading.bodyFontDesc")}
         >
-          <Segmented
-            value={readerFont}
-            options={[
-              { value: "serif", label: t("settings.reading.serif") },
-              { value: "sans", label: t("settings.reading.sans") },
-              { value: "hyperlegible", label: t("settings.reading.hyperlegible") },
-            ]}
-            onChange={setReaderFont}
-          />
+          <FontPicker value={readerFont} onChange={setReaderFont} />
         </Row>
         <Row label={t("settings.reading.fontSize")}>
           <Slider

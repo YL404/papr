@@ -293,8 +293,12 @@
     },
     "reading": {
       "font": "\u5b57\u4f53",
+      "fontSystem": "系统默认",
+      "fontSearch": "搜索字体…",
+      "fontEmpty": "没有匹配的字体",
+      "fontReset": "恢复默认",
       "bodyFont": "\u6b63\u6587\u5b57\u4f53",
-      "bodyFontDesc": "Hyperlegible \u4e13\u4e3a\u4f4e\u89c6\u529b\u8bfb\u8005\u4f18\u5316\u53ef\u8bfb\u6027",
+      "bodyFontDesc": "影响正文与 AI 摘要，使用设备已安装的字体",
       "serif": "\u886c\u7ebf",
       "sans": "\u65e0\u886c\u7ebf",
       "hyperlegible": "\u65e0\u969c\u788d",

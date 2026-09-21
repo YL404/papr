@@ -206,6 +206,9 @@ export const applyNetworkSettings = () =>
 // ── tray ──
 export const refreshTray = () => invoke<void>("refresh_tray");
 
+// ── fonts ──
+export const listSystemFonts = () => invoke<string[]>("list_system_fonts");
+
 // ── tags ──
 export const listTags = () => invoke<Tag[]>("list_tags");
 export const createTag = (name: string) =>
