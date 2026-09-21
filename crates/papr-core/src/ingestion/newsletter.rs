@@ -15,9 +15,8 @@
 //! `db.rs`). The `feed_url` of the backing feed row is a synthetic
 //! `imap://user@host/folder` string purely so the `UNIQUE(feed_url)`
 //! constraint stops the same mailbox being added twice — it is never fetched
-//! over HTTP. The IMAP app-password is stored in that table in plaintext, the
-//! same approach `freshrss_connect` takes for sync credentials (the whole DB
-//! is local to the user's machine).
+//! over HTTP. The IMAP app-password is stored in that table in plaintext (the
+//! whole DB is local to the user's machine).
 //!
 //! ## Testability
 //!

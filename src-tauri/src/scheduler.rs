@@ -10,7 +10,7 @@ use crate::error::AppResult;
 use crate::ingestion::refresh;
 use crate::models::RefreshProgress;
 use crate::state::AppState;
-use crate::{notify, sync, tray};
+use crate::{notify, tray};
 use std::time::Duration;
 use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
 
@@ -59,7 +59,7 @@ pub async fn refresh_all(
     .await?;
 
     // Background scheduler with nothing due this cycle: bow out before the
-    // heavier tail (sync, notifications, tray) so an idle tick is genuinely idle.
+    // heavier tail (notifications, tray) so an idle tick is genuinely idle.
     if !summary.ran {
         return Ok(0);
     }
@@ -68,17 +68,6 @@ pub async fn refresh_all(
     let _ = app.emit("feeds-updated", total_new);
 
     notify::notify_new_articles(app, total_new).await;
-
-    // Reconcile read/starred state with the sync server, if one is connected.
-    // A sync mutates article state and may add feeds, so emit `feeds-updated`
-    // again afterwards — the first emit fired before the sync touched the DB.
-    match sync::run_if_connected(&state.db, &client).await {
-        Ok(true) => {
-            let _ = app.emit("feeds-updated", 0);
-        }
-        Ok(false) => {}
-        Err(e) => log::warn!("sync failed: {e}"),
-    }
 
     notify::update_badge(app).await;
     tray::refresh(app).await;

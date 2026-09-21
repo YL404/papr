@@ -394,13 +394,6 @@ pub async fn get_article(state: State<'_, AppState>, id: i64) -> AppResult<Artic
     db::get_article(&conn, id)
 }
 
-/// Queue a read/starred change for FreshRSS, but only when a server is linked.
-fn enqueue_if_connected(conn: &rusqlite::Connection, id: i64, field: &str, value: bool) {
-    if db::is_freshrss_connected(conn) {
-        let _ = db::enqueue_sync(conn, id, field, value);
-    }
-}
-
 /// Refresh the two unread surfaces — the Dock badge and the menu-bar tray —
 /// after an operation that changed the unread count.
 async fn refresh_unread_surfaces(app: &AppHandle) {
@@ -414,7 +407,6 @@ pub async fn mark_read(app: AppHandle, id: i64, read: bool) -> AppResult<()> {
         let state = app.state::<AppState>();
         let conn = state.db.lock().await;
         db::set_read(&conn, id, read)?;
-        enqueue_if_connected(&conn, id, "read", read);
     }
     refresh_unread_surfaces(&app).await;
     Ok(())
@@ -425,7 +417,6 @@ pub async fn mark_starred(app: AppHandle, id: i64, starred: bool) -> AppResult<(
     let state = app.state::<AppState>();
     let conn = state.db.lock().await;
     db::set_starred(&conn, id, starred)?;
-    enqueue_if_connected(&conn, id, "starred", starred);
     Ok(())
 }
 
@@ -440,7 +431,7 @@ pub async fn mark_all_read(app: AppHandle, query: ArticleQuery) -> AppResult<usi
     let n = {
         let state = app.state::<AppState>();
         let conn = state.db.lock().await;
-        db::mark_all_read(&conn, &query, db::is_freshrss_connected(&conn))?
+        db::mark_all_read(&conn, &query)?
     };
     let _ = app.emit("feeds-updated", 0);
     refresh_unread_surfaces(&app).await;
@@ -1146,63 +1137,6 @@ pub async fn apply_network_settings(state: State<'_, AppState>) -> AppResult<()>
     };
     state.set_http(client);
     Ok(())
-}
-
-// ─────────────────────────── FreshRSS sync ───────────────────────────
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct FreshRssStatus {
-    connected: bool,
-    url: Option<String>,
-    /// Which GReader-compatible backend is connected: "freshrss" or
-    /// "miniflux". Always present (defaults to "freshrss") so the UI never
-    /// has to guess for older installs.
-    provider: String,
-}
-
-#[tauri::command]
-pub async fn freshrss_connect(
-    app: AppHandle,
-    url: String,
-    username: String,
-    password: String,
-    provider: Option<String>,
-) -> AppResult<()> {
-    let state = app.state::<AppState>();
-    crate::sync::connect(&state.db, &state.http(), &url, &username, &password, provider.as_deref())
-        .await
-}
-
-#[tauri::command]
-pub async fn freshrss_disconnect(app: AppHandle) -> AppResult<()> {
-    crate::sync::disconnect(&app.state::<AppState>().db).await
-}
-
-#[tauri::command]
-pub async fn freshrss_status(app: AppHandle) -> AppResult<FreshRssStatus> {
-    let info = crate::sync::connected_url(&app.state::<AppState>().db).await?;
-    let (url, provider) = match info {
-        Some((u, p)) => (Some(u), p),
-        None => (None, "freshrss".to_string()),
-    };
-    Ok(FreshRssStatus {
-        connected: url.is_some(),
-        url,
-        provider,
-    })
-}
-
-/// Run a full FreshRSS sync now; returns the number of reconciled articles.
-#[tauri::command]
-pub async fn freshrss_sync(app: AppHandle) -> AppResult<usize> {
-    let n = {
-        let state = app.state::<AppState>();
-        crate::sync::sync_now(&state.db, &state.http()).await?
-    };
-    let _ = app.emit("feeds-updated", 0);
-    refresh_unread_surfaces(&app).await;
-    Ok(n)
 }
 
 /// Rebuild the tray menu — used after a language change.

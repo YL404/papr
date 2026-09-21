@@ -34,7 +34,6 @@ const SECTIONS: { id: string; labelKey: string; icon: IconName }[] = [
   { id: "reading", labelKey: "settings.nav.reading", icon: "eye" },
   { id: "subscriptions", labelKey: "settings.nav.subscriptions", icon: "rss" },
   { id: "filters", labelKey: "settings.nav.filters", icon: "mute" },
-  { id: "sync", labelKey: "settings.nav.sync", icon: "refresh" },
   { id: "shortcuts", labelKey: "settings.nav.shortcuts", icon: "command" },
   { id: "notifications", labelKey: "settings.nav.notifications", icon: "inbox" },
   { id: "ai", labelKey: "settings.nav.ai", icon: "sparkle-fill" },
@@ -95,7 +94,6 @@ export default function SettingsDialog({
     reading: t("settings.sub.reading"),
     subscriptions: t("settings.sub.subscriptions", { count: feedCount }),
     filters: t("settings.sub.filters"),
-    sync: t("settings.sub.sync"),
     shortcuts: t("settings.sub.shortcuts"),
     notifications: t("settings.sub.notifications"),
     ai: t("settings.sub.ai"),
@@ -163,7 +161,6 @@ export default function SettingsDialog({
             {section === "filters" && (
               <FiltersSection feeds={feeds.data ?? []} onToast={onToast} />
             )}
-            {section === "sync" && <SyncSection onToast={onToast} />}
             {section === "shortcuts" && <ShortcutsSection />}
             {section === "notifications" && <NotificationsSection />}
             {section === "ai" && <AiSettingsGroup onToast={onToast} />}
@@ -1231,217 +1228,6 @@ function RsshubInstanceGroup() {
         />
       </Row>
     </div>
-  );
-}
-
-/* ── sync ────────────────────────────────────────────────── */
-function SyncSection({ onToast }: { onToast: (m: string) => void }) {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const actions = useArticleActions();
-  const status = useQuery({
-    queryKey: ["freshrss-status"],
-    queryFn: api.freshrssStatus,
-  });
-  const [provider, setProvider] = useState<api.GReaderProvider>("freshrss");
-  const [url, setUrl] = useState("");
-  const [user, setUser] = useState("");
-  const [pass, setPass] = useState("");
-  const [busy, setBusy] = useState(false);
-  const connected = status.data?.connected ?? false;
-  const connectedProvider: api.GReaderProvider =
-    status.data?.provider ?? "freshrss";
-  const providerLabel = (p: api.GReaderProvider) =>
-    p === "miniflux" ? "Miniflux" : "FreshRSS";
-
-  const connect = async () => {
-    if (!url.trim() || !user.trim()) return;
-    setBusy(true);
-    try {
-      await api.freshrssConnect(url.trim(), user.trim(), pass, provider);
-      await qc.invalidateQueries({ queryKey: ["freshrss-status"] });
-      onToast(t("settings.sync.connected"));
-      setPass("");
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const disconnect = async () => {
-    setBusy(true);
-    try {
-      await api.freshrssDisconnect();
-      await qc.invalidateQueries({ queryKey: ["freshrss-status"] });
-      onToast(t("settings.sync.disconnected"));
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const syncNow = async () => {
-    setBusy(true);
-    try {
-      const n = await api.freshrssSync();
-      // Sync reconciles read/starred state and may add feeds — refresh the
-      // article-bearing caches, not unrelated ones (AI summaries, settings).
-      actions.refreshAfterBulk();
-      onToast(t("settings.sync.syncDone", { count: n }));
-    } catch (e) {
-      reportError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const unavailable = [
-    { name: "Feedly", initial: "F", color: "#2BB24C", reason: t("settings.sync.reasonOauth") },
-    { name: "Inoreader", initial: "I", color: "#1976D2", reason: t("settings.sync.reasonOauth") },
-    { name: "iCloud", initial: "☁", color: "#0089E0", reason: t("settings.sync.reasonEntitlements") },
-  ];
-
-  return (
-    <>
-      <div className="settings-group">
-        <h3 className="settings-group-title">{t("settings.sync.greader")}</h3>
-        {connected ? (
-          <>
-            <div className="s-service">
-              <div
-                className="logo"
-                style={{
-                  background:
-                    connectedProvider === "miniflux" ? "#1F7AEC" : "#4A4A4A",
-                }}
-              >
-                {connectedProvider === "miniflux" ? "M" : "⚡"}
-              </div>
-              <div className="info">
-                <div className="title">{providerLabel(connectedProvider)}</div>
-                <div className="desc">{status.data?.url}</div>
-              </div>
-              <span className="status on">{t("settings.sync.statusConnected")}</span>
-            </div>
-            <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-              <button
-                className="s-btn primary"
-                onClick={syncNow}
-                disabled={busy}
-              >
-                <Icon name="refresh" size={12} />{" "}
-                {busy ? t("settings.sync.syncing") : t("settings.sync.syncNow")}
-              </button>
-              <button className="s-btn" onClick={disconnect} disabled={busy}>
-                {t("settings.sync.disconnect")}
-              </button>
-            </div>
-            <p
-              style={{
-                fontSize: 12,
-                color: "var(--muted)",
-                marginTop: 12,
-                lineHeight: 1.5,
-              }}
-            >
-              {t("settings.sync.syncHint")}
-            </p>
-          </>
-        ) : (
-          <>
-            <p className="modal-hint" style={{ marginBottom: 14 }}>
-              {t("settings.sync.connectHint")}
-            </p>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              <select
-                className="modal-input"
-                style={{ margin: 0 }}
-                value={provider}
-                onChange={(e) =>
-                  setProvider(e.target.value as api.GReaderProvider)
-                }
-                aria-label={t("settings.sync.provider")}
-              >
-                <option value="freshrss">
-                  {t("settings.sync.providerFreshrss")}
-                </option>
-                <option value="miniflux">
-                  {t("settings.sync.providerMiniflux")}
-                </option>
-              </select>
-              <input
-                className="modal-input"
-                style={{ margin: 0 }}
-                placeholder={t("settings.sync.serverPlaceholder")}
-                {...NO_AUTOCORRECT}
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-              />
-              <input
-                className="modal-input"
-                style={{ margin: 0 }}
-                placeholder={t("settings.sync.userPlaceholder")}
-                {...NO_AUTOCORRECT}
-                value={user}
-                onChange={(e) => setUser(e.target.value)}
-              />
-              <input
-                className="modal-input"
-                style={{ margin: 0 }}
-                type="password"
-                placeholder={
-                  provider === "miniflux"
-                    ? t("settings.sync.appPassPlaceholder")
-                    : t("settings.sync.passPlaceholder")
-                }
-                {...NO_AUTOCORRECT}
-                value={pass}
-                onChange={(e) => setPass(e.target.value)}
-              />
-              {provider === "miniflux" && (
-                <p
-                  style={{
-                    fontSize: 12,
-                    color: "var(--muted)",
-                    margin: "2px 0 0",
-                    lineHeight: 1.5,
-                  }}
-                >
-                  {t("settings.sync.minifluxPassHint")}
-                </p>
-              )}
-              <div>
-                <button
-                  className="s-btn primary"
-                  onClick={connect}
-                  disabled={busy || !url.trim() || !user.trim()}
-                >
-                  {busy ? t("settings.sync.connecting") : t("settings.sync.connect")}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="settings-group">
-        <h3 className="settings-group-title">{t("settings.sync.otherServices")}</h3>
-        {unavailable.map((s) => (
-          <div key={s.name} className="s-service" style={{ opacity: 0.6 }}>
-            <div className="logo" style={{ background: s.color }}>
-              {s.initial}
-            </div>
-            <div className="info">
-              <div className="title">{s.name}</div>
-              <div className="desc">{s.reason}</div>
-            </div>
-            <span className="status">{t("settings.sync.statusUnavailable")}</span>
-          </div>
-        ))}
-      </div>
-    </>
   );
 }
 

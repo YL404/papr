@@ -96,8 +96,9 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
         // removed; this keeps the version count aligned for databases that
         // already applied it. Search is keyword-only (FTS5).
         M::up("-- semantic search removed; search is FTS5 keyword-only"),
-        // v3 — sync support: a remote item id per article plus a small queue
-        // of local read/starred changes still to push to the sync server.
+        // v3 — (retired sync support: remote_id + a push queue for local
+        // read/starred changes. The sync layer is gone; the columns and the
+        // queue table remain, unused, because migrations are append-only.)
         M::up(
             r#"
             ALTER TABLE articles ADD COLUMN remote_id TEXT;
@@ -165,17 +166,14 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
              CREATE INDEX idx_articles_readlater
                  ON articles(read_later) WHERE read_later = 1;",
         ),
-        // v9 — index the article URL. FreshRSS reconciliation matches remote
-        // items to local articles by URL (up to ~1000 lookups per sync) and
-        // the dedup check tests URL existence per inserted article; both
-        // full-scanned the table without this.
+        // v9 — index the article URL. The dedup check tests URL existence per
+        // inserted article; without this it full-scanned the table.
         M::up("CREATE INDEX idx_articles_url ON articles(url);"),
         // v10 — email-newsletter sources (feature F5). A newsletter is a
         // normal `feeds` row (source_type = 'newsletter') so it lists,
         // searches and retains like an RSS feed; this side-table holds the
         // IMAP connection details, keyed 1:1 by feed_id and cascade-deleted
-        // with the feed. The app-password is stored in plaintext, the same
-        // way FreshRSS sync credentials live in the `settings` table — the
+        // with the feed. The app-password is stored in plaintext — the
         // database never leaves the user's machine.
         M::up(
             r#"
@@ -774,19 +772,6 @@ pub fn feeds_for_export(conn: &Connection) -> AppResult<Vec<(String, String, Opt
     Ok(rows)
 }
 
-/// Feed URLs the sync layer should mirror onto the server. Excludes
-/// `newsletter` sources (those have no upstream feed URL the server could
-/// subscribe to), matching the OPML-export filter.
-pub fn feed_urls_for_sync(conn: &Connection) -> AppResult<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT feed_url FROM feeds WHERE source_type != 'newsletter' AND feed_url <> ''",
-    )?;
-    let rows = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(rows)
-}
-
 /// Find a folder by name, creating it if absent. Used during OPML import.
 /// Resolve a folder name to its id, creating the folder when absent. Used by
 /// OPML import to attach imported feeds to their folders. `create_folder` is
@@ -802,8 +787,7 @@ pub fn move_feed(conn: &Connection, id: i64, folder_id: Option<i64>) -> AppResul
     Ok(())
 }
 
-/// The folder a feed currently sits in, if any. Used by sync to tell an
-/// already-filed feed (leave it) from an unfiled one (adopt the server folder).
+/// The folder a feed currently sits in, if any.
 pub fn feed_folder_id(conn: &Connection, id: i64) -> AppResult<Option<i64>> {
     Ok(conn
         .query_row(
@@ -1387,6 +1371,33 @@ fn fts_query(input: &str, or_join: bool) -> String {
     }
 }
 
+/// Full-text search over every article, ranked by FTS relevance. Uses
+/// OR-joined terms so a multi-word query still matches articles containing
+/// *some* of its keywords — an AND join would require every word to appear and
+/// return nothing for a real query. Returns `(id, title, feed_title)`. An
+/// all-stopword / punctuation-only query yields no rows.
+pub fn search_articles(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+) -> AppResult<Vec<(i64, String, String)>> {
+    let mut stmt = conn.prepare(
+        "SELECT a.id, a.title, f.title
+         FROM articles a
+         JOIN feeds f ON f.id = a.feed_id
+         JOIN articles_fts fts ON fts.rowid = a.id
+         WHERE articles_fts MATCH ?1
+         ORDER BY fts.rank
+         LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![fts_query(query, true), limit], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
 pub fn get_article(conn: &Connection, id: i64) -> AppResult<ArticleDetail> {
     let mut detail = conn.query_row(
         "SELECT a.id, a.feed_id, f.title, f.source_type, a.title, a.author, a.url,
@@ -1575,15 +1586,8 @@ pub fn set_translation(conn: &Connection, id: i64, html: &str, lang: &str) -> Ap
     Ok(())
 }
 
-/// Mark every article matching the current sidebar selection as read. When
-/// `enqueue_sync` is set, the read change is also queued for the sync server
-/// — otherwise a bulk mark-all-read never reaches FreshRSS and the next pull
-/// silently reverts it.
-pub fn mark_all_read(
-    conn: &Connection,
-    query: &ArticleQuery,
-    enqueue_sync: bool,
-) -> AppResult<usize> {
+/// Mark every article matching the current sidebar selection as read.
+pub fn mark_all_read(conn: &Connection, query: &ArticleQuery) -> AppResult<usize> {
     // WHERE fragment selecting the articles in the current view, plus an
     // optional bound id (feed / folder / tag). `pred` is a fixed literal.
     let (pred, id): (&str, Option<i64>) = match query {
@@ -1602,47 +1606,11 @@ pub fn mark_all_read(
     };
     let bind: Vec<&dyn rusqlite::ToSql> =
         id.iter().map(|v| v as &dyn rusqlite::ToSql).collect();
-
-    // Queue + flip together: the sync-queue rows and the is_read change must
-    // commit atomically, or a mid-way failure leaves the queue claiming a
-    // read state the articles never reached. Queue *before* flipping so the
-    // `is_read = 0` filter still matches; the SELECT's WHERE also
-    // disambiguates the ON CONFLICT clause.
-    //
-    // Articles are queued regardless of whether they already carry a
-    // `remote_id`: freshly fetched items have none until a pull matches them
-    // by URL, and "mark all read" is most often run right after a refresh on
-    // exactly those items. `take_sync_queue` defers any entry whose article
-    // still lacks a remote id, so the change pushes on the sync after the id
-    // is assigned — mirroring the single-article `enqueue_sync` path. The old
-    // `remote_id IS NOT NULL` filter here silently dropped those changes.
-    let tx = conn.unchecked_transaction()?;
-    if enqueue_sync {
-        tx.execute(
-            &format!(
-                "INSERT INTO sync_queue(article_id, field, value)
-                 SELECT id, 'read', 1 FROM articles
-                 WHERE {pred} AND is_read = 0
-                 ON CONFLICT(article_id, field) DO UPDATE SET value = 1"
-            ),
-            bind.as_slice(),
-        )?;
-    }
-    let n = tx.execute(
+    let n = conn.execute(
         &format!("UPDATE articles SET is_read = 1 WHERE {pred} AND is_read = 0"),
         bind.as_slice(),
     )?;
-    tx.commit()?;
     Ok(n)
-}
-
-/// Whether a FreshRSS server is currently linked (a non-empty URL is stored).
-pub fn is_freshrss_connected(conn: &Connection) -> bool {
-    get_setting(conn, "freshrss_url")
-        .ok()
-        .flatten()
-        .map(|u| !u.trim().is_empty())
-        .unwrap_or(false)
 }
 
 // ─────────────────────────── tags ───────────────────────────
@@ -2295,186 +2263,6 @@ pub fn latest_fetch(conn: &Connection) -> AppResult<Option<String>> {
     Ok(conn.query_row("SELECT MAX(last_fetched_at) FROM feeds", [], |r| {
         r.get::<_, Option<String>>(0)
     })?)
-}
-
-// ─────────────────────────── sync ───────────────────────────
-
-/// Local article id for a given source URL — used to reconcile remote state.
-pub fn article_id_by_url(conn: &Connection, url: &str) -> AppResult<Option<i64>> {
-    Ok(conn
-        .query_row(
-            "SELECT id FROM articles WHERE url = ?1 LIMIT 1",
-            params![url],
-            |r| r.get(0),
-        )
-        .optional()?)
-}
-
-pub fn set_remote_id(conn: &Connection, article_id: i64, remote_id: &str) -> AppResult<()> {
-    conn.execute(
-        "UPDATE articles SET remote_id = ?2 WHERE id = ?1",
-        params![article_id, remote_id],
-    )?;
-    Ok(())
-}
-
-/// Apply remote read/starred state to a local article.
-pub fn set_sync_state(
-    conn: &Connection,
-    article_id: i64,
-    read: bool,
-    starred: bool,
-) -> AppResult<()> {
-    conn.execute(
-        "UPDATE articles SET is_read = ?2, is_starred = ?3 WHERE id = ?1",
-        params![article_id, read, starred],
-    )?;
-    Ok(())
-}
-
-/// Resolve a set of feed URLs to the ids of the local feeds that carry them,
-/// skipping any URL the local DB doesn't track. Used to scope a sync
-/// reconciliation to the feeds the server actually knows about.
-pub fn feed_ids_by_urls(
-    conn: &Connection,
-    urls: &std::collections::HashSet<String>,
-) -> AppResult<Vec<i64>> {
-    let mut ids = Vec::with_capacity(urls.len());
-    for url in urls {
-        if let Some(id) = find_feed_by_url(conn, url)? {
-            ids.push(id);
-        }
-    }
-    Ok(ids)
-}
-
-/// Reconcile local read/starred state against the server's authoritative unread
-/// + starred URL sets, for every article under one of `feed_ids`. An article is
-/// marked read unless its URL is in `unread_urls`, and starred iff its URL is in
-/// `starred_urls` — so the server's read state wins even for the long tail of
-/// items a pull of only the recent unread set never enumerates (issue #96).
-///
-/// Articles carrying an un-pushed local edit (in `sync_queue`) are skipped, so a
-/// pull never clobbers a change still waiting to be sent. Only rows whose state
-/// actually changes are written. Returns the number of articles changed.
-pub fn reconcile_sync_state(
-    conn: &Connection,
-    feed_ids: &[i64],
-    unread_urls: &std::collections::HashSet<String>,
-    starred_urls: &std::collections::HashSet<String>,
-) -> AppResult<usize> {
-    let pending: std::collections::HashSet<i64> =
-        pending_sync_article_ids(conn)?.into_iter().collect();
-    let tx = conn.unchecked_transaction()?;
-    let mut changed: Vec<(i64, bool, bool)> = Vec::new();
-    {
-        let mut sel = tx.prepare(
-            "SELECT id, url, is_read, is_starred FROM articles
-             WHERE feed_id = ?1 AND url IS NOT NULL",
-        )?;
-        for &fid in feed_ids {
-            let rows = sel.query_map(params![fid], |r| {
-                Ok((
-                    r.get::<_, i64>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, bool>(2)?,
-                    r.get::<_, bool>(3)?,
-                ))
-            })?;
-            for row in rows {
-                let (id, url, cur_read, cur_starred) = row?;
-                if pending.contains(&id) {
-                    continue;
-                }
-                let read = !unread_urls.contains(&url);
-                let starred = starred_urls.contains(&url);
-                if read != cur_read || starred != cur_starred {
-                    changed.push((id, read, starred));
-                }
-            }
-        }
-    }
-    for (id, read, starred) in &changed {
-        tx.execute(
-            "UPDATE articles SET is_read = ?2, is_starred = ?3 WHERE id = ?1",
-            params![id, read, starred],
-        )?;
-    }
-    tx.commit()?;
-    Ok(changed.len())
-}
-
-/// Queue a local read/starred change to push on the next sync.
-pub fn enqueue_sync(
-    conn: &Connection,
-    article_id: i64,
-    field: &str,
-    value: bool,
-) -> AppResult<()> {
-    conn.execute(
-        "INSERT INTO sync_queue(article_id, field, value) VALUES (?1, ?2, ?3)
-         ON CONFLICT(article_id, field) DO UPDATE SET value = excluded.value",
-        params![article_id, field, value],
-    )?;
-    Ok(())
-}
-
-/// Article ids that still carry un-pushed local changes — their state must not
-/// be overwritten by a pull until the change has been sent.
-pub fn pending_sync_article_ids(conn: &Connection) -> AppResult<Vec<i64>> {
-    let mut stmt = conn.prepare("SELECT DISTINCT article_id FROM sync_queue")?;
-    let ids = stmt
-        .query_map([], |r| r.get(0))?
-        .collect::<Result<Vec<_>, _>>()?;
-    Ok(ids)
-}
-
-/// One pushable change drained from the sync queue.
-pub struct SyncEntry {
-    pub article_id: i64,
-    pub remote_id: String,
-    pub field: String,
-    pub value: bool,
-}
-
-/// Drain pushable queue entries. Only rows whose article already has a remote
-/// id are returned and removed; the rest wait for a pull to assign one. The
-/// caller MUST re-queue any entry whose push fails (see `requeue_sync`) so a
-/// network blip never silently drops a local change.
-pub fn take_sync_queue(conn: &Connection) -> AppResult<Vec<SyncEntry>> {
-    let mut stmt = conn.prepare(
-        "SELECT q.article_id, a.remote_id, q.field, q.value
-         FROM sync_queue q JOIN articles a ON a.id = q.article_id
-         WHERE a.remote_id IS NOT NULL",
-    )?;
-    let rows: Vec<SyncEntry> = stmt
-        .query_map([], |r| {
-            Ok(SyncEntry {
-                article_id: r.get(0)?,
-                remote_id: r.get(1)?,
-                field: r.get(2)?,
-                value: r.get::<_, i64>(3)? != 0,
-            })
-        })?
-        .collect::<Result<_, _>>()?;
-    drop(stmt);
-    conn.execute(
-        "DELETE FROM sync_queue WHERE article_id IN
-            (SELECT id FROM articles WHERE remote_id IS NOT NULL)",
-        [],
-    )?;
-    Ok(rows)
-}
-
-/// Re-insert a queue entry whose push failed. Unlike `enqueue_sync` this does
-/// not clobber a newer edit the user made on the same article during the sync.
-pub fn requeue_sync(conn: &Connection, article_id: i64, field: &str, value: bool) -> AppResult<()> {
-    conn.execute(
-        "INSERT INTO sync_queue(article_id, field, value) VALUES (?1, ?2, ?3)
-         ON CONFLICT(article_id, field) DO NOTHING",
-        params![article_id, field, value],
-    )?;
-    Ok(())
 }
 
 #[cfg(test)]
@@ -3357,116 +3145,6 @@ mod tests {
             )
             .unwrap();
         assert_eq!(starred_in_a, 0, "a feed-scoped rule must not touch other feeds");
-    }
-
-    // ── mark_all_read sync queueing ──────────────────────────────────
-
-    #[test]
-    fn mark_all_read_queues_articles_without_a_remote_id() {
-        // Freshly fetched articles carry no `remote_id` until a sync pull
-        // matches them by URL. A bulk "mark all read" run right after a
-        // refresh must still queue those changes so they reach the sync
-        // server once the id is assigned — not silently drop them.
-        let (conn, aid) = test_db();
-        assert_eq!(
-            conn.query_row("SELECT remote_id FROM articles WHERE id = ?1", [aid], |r| r
-                .get::<_, Option<String>>(0))
-                .unwrap(),
-            None,
-            "fixture article should start without a remote id"
-        );
-
-        let n = mark_all_read(&conn, &ArticleQuery::All, true).unwrap();
-        assert_eq!(n, 1, "the one unread article should be flipped to read");
-
-        let queued: i64 = conn
-            .query_row(
-                "SELECT count(*) FROM sync_queue WHERE article_id = ?1 AND field = 'read'",
-                [aid],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(queued, 1, "the read change must be queued for sync");
-    }
-
-    #[test]
-    fn mark_all_read_skips_sync_queue_when_not_connected() {
-        // Without a sync server linked, no rows should land in the queue.
-        let (conn, _aid) = test_db();
-        mark_all_read(&conn, &ArticleQuery::All, false).unwrap();
-        let queued: i64 = conn
-            .query_row("SELECT count(*) FROM sync_queue", [], |r| r.get(0))
-            .unwrap();
-        assert_eq!(queued, 0);
-    }
-
-    // ── sync state reconciliation (issue #96) ────────────────────────
-
-    #[test]
-    fn reconcile_marks_tail_read_and_scopes_to_server_feeds() {
-        let (conn, _aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        // Fixture article a1 (guid g1) plus two more in the same server feed —
-        // all start unread, as a raw RSS poll would leave them.
-        seed(&conn, feed_id, "a2", "Two");
-        seed(&conn, feed_id, "a3", "Three");
-        // A local-only feed the server doesn't know about.
-        let local = insert_feed(
-            &conn,
-            "https://local.example/feed.xml",
-            None,
-            "Local",
-            None,
-            SourceType::Rss,
-            None,
-        )
-        .unwrap();
-        seed(&conn, local, "b1", "Local one");
-
-        // Server: only a2 is unread, a3 is starred.
-        let unread: std::collections::HashSet<String> =
-            ["https://example.com/a2".to_string()].into_iter().collect();
-        let starred: std::collections::HashSet<String> =
-            ["https://example.com/a3".to_string()].into_iter().collect();
-
-        let changed = reconcile_sync_state(&conn, &[feed_id], &unread, &starred).unwrap();
-        assert_eq!(changed, 2, "a1 -> read and a3 -> read+starred; a2 unchanged");
-
-        let read = |g: &str| -> bool {
-            conn.query_row("SELECT is_read FROM articles WHERE guid = ?1", [g], |r| r.get(0))
-                .unwrap()
-        };
-        let is_starred = |g: &str| -> bool {
-            conn.query_row("SELECT is_starred FROM articles WHERE guid = ?1", [g], |r| {
-                r.get(0)
-            })
-            .unwrap()
-        };
-        assert!(read("g1"), "tail item not in unread set is marked read");
-        assert!(!read("a2"), "server-unread item stays unread");
-        assert!(read("a3") && is_starred("a3"), "a3 is read and starred");
-        assert!(!read("b1"), "local-only feed is out of scope and untouched");
-    }
-
-    #[test]
-    fn reconcile_skips_pending_local_edits() {
-        let (conn, aid) = test_db();
-        let feed_id: i64 = conn
-            .query_row("SELECT feed_id FROM articles LIMIT 1", [], |r| r.get(0))
-            .unwrap();
-        // User marked a1 unread locally; the change hasn't been pushed yet.
-        enqueue_sync(&conn, aid, "read", false).unwrap();
-        // Server considers a1 read (empty unread set) — but the pending local
-        // edit must win, so nothing changes.
-        let empty = std::collections::HashSet::new();
-        let changed = reconcile_sync_state(&conn, &[feed_id], &empty, &empty).unwrap();
-        assert_eq!(changed, 0, "pending article is skipped");
-        let read: bool = conn
-            .query_row("SELECT is_read FROM articles WHERE id = ?1", [aid], |r| r.get(0))
-            .unwrap();
-        assert!(!read, "a1 keeps its local (unread) state");
     }
 
     // ── retention cleanup ────────────────────────────────────────────

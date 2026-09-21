@@ -13,7 +13,6 @@ use clap::{Parser, Subcommand};
 use papr_core::db;
 use papr_core::ingestion::{fetch, parse, refresh};
 use papr_core::models::ArticleQuery;
-use papr_core::sync;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
@@ -193,36 +192,8 @@ enum Cmd {
         #[arg(long, default_value = "all", value_parser = ["all", "claude", "codex", "opencode"])]
         app: String,
     },
-    /// FreshRSS / GReader sync (status / connect / disconnect / run).
-    Sync {
-        #[command(subcommand)]
-        cmd: Option<SyncCmd>,
-    },
 }
 
-#[derive(Subcommand)]
-enum SyncCmd {
-    /// Show the current sync connection (default).
-    Status,
-    /// Connect to a FreshRSS / Miniflux server (verifies credentials).
-    Connect {
-        #[arg(long)]
-        url: String,
-        #[arg(long)]
-        user: String,
-        #[arg(long)]
-        password: String,
-        #[arg(long, value_parser = ["freshrss", "miniflux"])]
-        provider: Option<String>,
-    },
-    /// Forget the stored sync credentials.
-    Disconnect {
-        #[arg(long)]
-        yes: bool,
-    },
-    /// Run a full sync now (push queued changes, pull subscriptions & state).
-    Run,
-}
 
 /// A view selector shared by `mark-all` (and reusable by other bulk verbs).
 #[derive(clap::Args)]
@@ -513,7 +484,6 @@ async fn run(cli: Cli) -> Result<String, AxiError> {
         Some(Cmd::Stats) => cmd_stats(&path),
         Some(Cmd::Admin { cmd }) => cmd_admin(&path, cmd),
         Some(Cmd::Setup { .. }) => unreachable!("setup is dispatched before db_path"),
-        Some(Cmd::Sync { cmd }) => cmd_sync(&path, cmd.unwrap_or(SyncCmd::Status)).await,
     }
 }
 
@@ -830,7 +800,7 @@ fn cmd_read(path: &Path, args: ReadArgs) -> Result<String, AxiError> {
 
 fn cmd_search(path: &Path, query: &str, limit: i64) -> Result<String, AxiError> {
     let conn = open_ro(path)?;
-    let hits = db::search_articles_for_rag(&conn, query, clamp_limit(limit)).map_err(db_err)?;
+    let hits = db::search_articles(&conn, query, clamp_limit(limit)).map_err(db_err)?;
     let mut d = Doc::new();
     d.set("query", query);
     d.set("count", hits.len());
@@ -1031,64 +1001,6 @@ async fn cmd_refresh(
     Ok(d.into_toon())
 }
 
-// ─────────────────────────────── sync ───────────────────────────────
-
-async fn cmd_sync(path: &Path, cmd: SyncCmd) -> Result<String, AxiError> {
-    let conn = db::open(path).map_err(db_err)?;
-    let dbm = tokio::sync::Mutex::new(conn);
-    let client = http_client()?;
-    match cmd {
-        SyncCmd::Status => {
-            let info = sync::connected_url(&dbm)
-                .await
-                .map_err(|e| clean_err("sync status", e))?;
-            let mut d = Doc::new();
-            match info {
-                Some((url, provider)) => {
-                    d.set("sync", json!({ "connected": true, "provider": provider, "url": url }));
-                    d.help(vec!["Run `papr sync run` to reconcile now".into()]);
-                }
-                None => {
-                    d.set("sync", json!({ "connected": false }));
-                    d.help(vec![
-                        "Run `papr sync connect --url <u> --user <u> --password <p>` to connect"
-                            .into(),
-                    ]);
-                }
-            }
-            Ok(d.into_toon())
-        }
-        SyncCmd::Connect { url, user, password, provider } => {
-            sync::connect(&dbm, &client, &url, &user, &password, provider.as_deref())
-                .await
-                .map_err(|e| clean_err("sync connect failed", e))?;
-            let mut d = Doc::new();
-            d.set("ok", format!("connected to {url}"));
-            d.help(vec!["Run `papr sync run` to reconcile now".into()]);
-            Ok(d.into_toon())
-        }
-        SyncCmd::Disconnect { yes } => {
-            require_yes(yes, "sync disconnect", "papr sync disconnect")?;
-            sync::disconnect(&dbm).await.map_err(db_err)?;
-            ok_line("sync: disconnected".into())
-        }
-        SyncCmd::Run => {
-            let connected = sync::connected_url(&dbm).await.map_err(db_err)?.is_some();
-            if !connected {
-                let mut d = Doc::new();
-                d.set("ok", "not connected (no-op)");
-                d.help(vec!["Run `papr sync connect ...` first".into()]);
-                return Ok(d.into_toon());
-            }
-            eprintln!("syncing…");
-            let n = sync::sync_now(&dbm, &client)
-                .await
-                .map_err(|e| clean_err("sync failed", e))?;
-            Ok(Doc::new().set("sync", json!({ "reconciled": n })).into_toon())
-        }
-    }
-}
-
 // ─────────────────────── feeds / folders management ───────────────────────
 
 fn feed_title(conn: &Connection, id: i64) -> Option<String> {
@@ -1116,7 +1028,7 @@ fn cmd_mark_all(path: &Path, f: &FilterArgs) -> Result<String, AxiError> {
     ])?;
     let conn = open_rw(path)?;
     let query = filter_query(f);
-    let n = db::mark_all_read(&conn, &query, true).map_err(db_err)?;
+    let n = db::mark_all_read(&conn, &query).map_err(db_err)?;
     ok_line(format!("marked {n} article(s) read"))
 }
 

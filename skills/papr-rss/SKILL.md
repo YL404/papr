@@ -57,12 +57,6 @@ papr settings get <key> | papr settings set <key> <value>
 papr stats
 ```
 
-## Sync
-
-```sh
-papr sync status | papr sync run   # reconcile read/starred + subscriptions with FreshRSS/Miniflux
-```
-
 There are no summarize/ask/digest/translate commands: you are the language
 model, so read the text with `papr read <id>` (or gather candidates with
 `papr search`) and summarize, answer or translate it yourself — no second AI

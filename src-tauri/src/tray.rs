@@ -191,11 +191,7 @@ fn handle_event(app: &AppHandle, event: MenuEvent) {
                 {
                     let state = app.state::<AppState>();
                     let conn = state.db.lock().await;
-                    let _ = db::mark_all_read(
-                        &conn,
-                        &ArticleQuery::All,
-                        db::is_freshrss_connected(&conn),
-                    );
+                    let _ = db::mark_all_read(&conn, &ArticleQuery::All);
                 }
                 let _ = app.emit("feeds-updated", 0);
                 notify::update_badge(&app).await;
