@@ -2,7 +2,7 @@
 
 # Papr
 
-**A fast, native RSS reader — and a CLI your AI agent can actually drive.**
+**A fast, native RSS reader for macOS — and a CLI your AI agent can actually drive.**
 
 </div>
 
@@ -11,10 +11,12 @@ Papr is two front-ends over **one local database**:
 - **A desktop reader** — fast, native, offline-first. No account, no cloud.
 - **`papr`, an agent-facing CLI** — so an autonomous agent (Claude Code, Codex,
   OpenCode…) can read, search and triage your feeds straight from the shell.
-  [Jump to it ↓](#papr--your-feeds-handed-to-your-agent)
 
 Both read the same database through the shared `papr-core` crate, so the app and
 the CLI can never drift apart.
+
+> A fork of [l0ng-ai/papr](https://github.com/l0ng-ai/papr), trimmed to a
+> macOS-only scope with its own release channel.
 
 ---
 
@@ -24,7 +26,8 @@ the CLI can never drift apart.
 - **Smart views** — All, Unread, Starred, and Read Later, with live counts.
 - **Tags & rules** — color-coded tags and rules that tag new articles automatically.
 - **Full-text** — fetch and clean the complete article when a feed ships only a summary.
-- **AI** — summaries, ask-the-article Q&A, and digests. Bring your own API key.
+- **AI** — a summary at the top of every article, generated on demand with
+  selectable prompt presets, plus article translation. Bring your own API key.
 - **Audio** — a built-in player that follows you from article to article.
 - **FreshRSS sync** — keep read state in step with a FreshRSS server.
 - **Local-first** — everything stays on your machine. No account, no cloud.
@@ -32,22 +35,20 @@ the CLI can never drift apart.
 
 ### Install
 
-| Platform | How |
-| --- | --- |
-| **macOS** | `brew install --cask l0ng-ai/papr/papr` — or grab the `.dmg` |
-| **Windows** | Download the `.msi` installer |
-| **Linux** | Download the `.AppImage` or `.deb` |
+Grab the `.dmg` from the
+**[latest release](https://github.com/YL404/papr/releases/latest)** — macOS
+builds are Developer ID signed and notarized. Or build from source:
 
-All packages live on the **[latest release](https://github.com/l0ng-ai/papr/releases/latest)**.
-The macOS builds are Developer ID signed and notarized.
+```sh
+pnpm install && pnpm tauri build
+```
 
 ---
 
 ## `papr` — your feeds, handed to your agent
 
-This is what makes Papr different. `papr` is a command-line companion built **for
-autonomous agents** to drive over the shell. Point your agent at it and it can
-work your feeds with no GUI:
+`papr` is a command-line companion built **for autonomous agents** to drive over
+the shell. Point your agent at it and it can work your feeds with no GUI:
 
 - **Read** — `feeds`, `list`, `read`, full-text `search`
 - **Triage** — `mark` read/star/later, `extract` full text, `refresh`
@@ -63,8 +64,8 @@ counts and structured exit codes.
 $ papr
 unread: 206   starred: 17   later: 0   feeds: 15
 articles[10]{id,feed,title,flags,date}:
-  3664,V2EX,[Java] 使用 kkRepo 搭建 Maven 私服,unread.star,"2026-06-25"
-  ...
+   3664,V2EX,[Java] 使用 kkRepo 搭建 Maven 私服,unread.star,"2026-06-25"
+   ...
 help[4]: Run `papr read <id>` to read an article's full text, ...
 ```
 
@@ -75,7 +76,7 @@ when an agent recognizes a feed-related task, so it costs nothing until you use
 it. Install it with [`skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add https://github.com/l0ng-ai/papr/tree/main/skills/papr-rss
+npx skills add https://github.com/YL404/papr/tree/main/skills/papr-rss
 ```
 
 Want the agent *proactively* aware of your feeds every conversation? `papr setup`
@@ -85,8 +86,6 @@ wires up an ambient SessionStart hook (Claude Code, Codex, OpenCode).
 
 | Platform | How |
 | --- | --- |
-| **macOS / Linux** | `brew install l0ng-ai/papr/papr-cli` |
-| **Windows** | Download `papr-x86_64-pc-windows-msvc.zip`, unzip, drop `papr.exe` on your `PATH` |
-| **Any** | Prebuilt `papr-<target>.tar.gz` from the [latest release](https://github.com/l0ng-ai/papr/releases/latest), or `cargo build --release -p papr-cli` |
+| **macOS** | `papr-<target>.tar.gz` from the [latest release](https://github.com/YL404/papr/releases/latest), or `cargo build --release -p papr-cli` |
 
 > **Full command reference, agent setup, and install options → [docs/cli.md](docs/cli.md)**
