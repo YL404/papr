@@ -2679,28 +2679,34 @@ button { font-family: inherit; }
 }
 .s-text-input:focus { border-color: var(--accent); }
 /* Prompt editor — a full-width multi-line field, so it opts out of the
-   label-left / control-right settings-row layout. */
+   label-left / control-right settings-row layout. Padding mirrors
+   .settings-row (12px above and below the shared hairline) so the prompt
+   blocks keep the same vertical rhythm as the rows around them. */
 .settings-prompt {
-  padding: 12px 0 0;
+  padding: 12px 0;
   border-bottom: 1px solid var(--hair);
 }
 .settings-prompt:last-child { border-bottom: 0; }
+/* The stacked label needs its own gap to what follows it — the row layout's
+   side-by-side alignment no longer supplies one, and without it the preset
+   dropdown / textarea sit glued to the description line. */
+.settings-prompt .settings-row-text { margin-bottom: 10px; }
 .settings-prompt-foot {
   display: flex;
   justify-content: flex-end;
-  margin: 8px 0 2px;
+  margin-top: 10px;
 }
 /* Preset picker row, sitting above the prompt field. */
 .settings-prompt-controls {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
 }
 .settings-prompt-hint {
   font-size: 11.5px;
   color: var(--muted-2);
-  margin: 8px 0 2px;
+  margin-top: 10px;
 }
 .s-textarea {
   font-family: var(--mono);
