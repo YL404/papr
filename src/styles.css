@@ -2696,81 +2696,62 @@ button { font-family: inherit; }
   justify-content: flex-end;
   margin-top: 10px;
 }
-/* Preset picker — the summary-prompt chooser, laid out like the article
-   list: a row per option (small name, one-line description, clamped prompt
-   preview) with hover and selected states to match. Hovering a row previews
-   its full prompt in a panel below the list. */
+/* Preset picker — one row of pills; the hovered option's prompt opens in a
+   bubble at the pointer (see .s-preset-bubble). */
 .s-preset-picker {
   position: relative;
   display: flex;
-  flex-direction: column;
-  background: var(--panel);
-  border: 1px solid var(--hair);
-  border-radius: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 .s-preset {
-  display: block;
-  width: 100%;
-  padding: 9px 14px;
-  background: none;
-  border: 0;
-  border-bottom: 1px solid var(--hair);
-  cursor: pointer;
+  padding: 5px 12px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
   font-family: inherit;
-  text-align: left;
-  transition: background .12s;
+  font-size: 12.5px;
+  cursor: pointer;
 }
-.s-preset:first-child { border-radius: 9px 9px 0 0; }
-.s-preset:last-of-type { border-bottom: 0; border-radius: 0 0 9px 9px; }
-.s-preset:hover { background: var(--hover); }
-.s-preset.active { background: var(--accent-soft); }
-.s-preset-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 4px;
-}
-.s-preset-name {
-  font-size: 11.5px;
-  font-weight: 550;
+.s-preset:hover { border-color: var(--ink-2); background: var(--hover); }
+.s-preset.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
   color: var(--accent-ink);
-  letter-spacing: 0.01em;
 }
-.s-preset-spacer { flex: 1; }
-.s-preset-desc {
-  display: block;
-  font-size: 13.5px;
-  font-weight: 500;
-  color: var(--ink);
-  line-height: 1.4;
-  margin-bottom: 3px;
-}
-.s-preset-snippet {
-  font-size: 12px;
-  color: var(--muted);
-  line-height: 1.5;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-/* The custom field sits below the picker, not glued to it. */
-.s-preset-picker + .s-textarea { margin-top: 10px; }
-.s-preset-peek {
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
-  z-index: 10;
-  width: 100%;
-  max-height: 240px;
+/* The custom field sits below the picker, not glued to it. (`~` not `+`:
+   the hover bubble may render between the two.) */
+.s-preset-picker ~ .s-textarea { margin-top: 10px; }
+.s-preset-bubble {
+  position: fixed;
+  z-index: 1000;
+  width: min(420px, calc(100vw - 16px));
+  max-height: min(320px, 50vh);
   overflow-y: auto;
   padding: 10px 12px;
   background: var(--panel);
   border: 1px solid var(--hair-strong);
   border-radius: 8px;
-  box-shadow: var(--shadow-raise);
+  box-shadow: var(--shadow-pop);
+  /* Follows the pointer, so it must never eat the hover it belongs to. */
+  pointer-events: none;
 }
-.s-preset-peek-text {
-  margin: 0;
+.s-preset-bubble-name {
+  font-size: 11.5px;
+  font-weight: 550;
+  color: var(--accent-ink);
+  letter-spacing: 0.01em;
+}
+.s-preset-bubble-desc {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.s-preset-bubble-text {
+  margin: 8px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--hair);
   font-family: var(--mono);
   font-size: 11.5px;
   line-height: 1.55;

@@ -530,19 +530,56 @@ const SUMMARY_PRESET_LABELS: Record<string, string> = {
 };
 
 /** One-line descriptions of the built-in presets, keyed the same way. These
- *  say what a preset is *for* — the prompt itself stays behind the hover
- *  preview. */
+ *  say what a preset is *for*; the prompt itself shows in the hover bubble. */
 const SUMMARY_PRESET_DESCS: Record<string, string> = {
   general: "settings.ai.presetGeneralDesc",
   brief: "settings.ai.presetBriefDesc",
   deep: "settings.ai.presetDeepDesc",
 };
 
-/** The opening of a prompt, flattened onto the picker row's preview line. The
- *  `{lang}` token is dropped — it is a substitution slot, not prompt text. */
-function promptSnippet(template: string): string {
-  const flat = template.replace(/\{lang\}/g, "").replace(/\s+/g, " ").trim();
-  return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
+/** The bubble's box, used only to decide which side of the pointer it opens
+ *  on — the real size is whatever the prompt needs, up to the CSS caps. */
+const BUBBLE_W = 420;
+const BUBBLE_H = 320;
+
+/** The prompt preview bubble: follows the pointer while a preset option is
+ *  hovered (keyboard focus anchors it below the option instead) and carries
+ *  the whole prompt, flipping to the other side of the pointer near the
+ *  viewport edges. */
+function PresetBubble({
+  peek,
+  presets,
+  custom,
+}: {
+  peek: { id: string; x: number; y: number };
+  presets: { id: string; template: string }[];
+  custom: string;
+}) {
+  const { t } = useTranslation();
+  const isCustom = peek.id === "custom";
+  const p = presets.find((q) => q.id === peek.id);
+  const name = isCustom
+    ? t("settings.ai.presetCustom")
+    : t(SUMMARY_PRESET_LABELS[peek.id] ?? peek.id);
+  const desc = isCustom
+    ? t("settings.ai.presetCustomDesc")
+    : t(SUMMARY_PRESET_DESCS[peek.id] ?? "");
+  const body = isCustom
+    ? custom.trim() || t("settings.ai.presetCustomHint")
+    : p?.template ?? "";
+
+  const flipX = peek.x + 16 + BUBBLE_W > window.innerWidth - 8;
+  const flipY = peek.y + 20 + BUBBLE_H > window.innerHeight - 8;
+  const left = flipX ? Math.max(8, peek.x - BUBBLE_W - 16) : peek.x + 16;
+  const top = flipY ? Math.max(8, peek.y - BUBBLE_H - 16) : peek.y + 20;
+
+  return (
+    <div className="s-preset-bubble" style={{ left, top }} role="tooltip">
+      <div className="s-preset-bubble-name">{name}</div>
+      {desc && <div className="s-preset-bubble-desc">{desc}</div>}
+      <pre className="s-preset-bubble-text">{body}</pre>
+    </div>
+  );
 }
 
 /** The AI-summary prompt: a picker over the built-in presets plus a Custom
@@ -558,8 +595,11 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
   );
   const [preset, setPreset] = useState(DEFAULT_SUMMARY_PRESET);
   const [custom, setCustom] = useState("");
-  // The preset whose prompt is being previewed (hover / keyboard focus).
-  const [peek, setPeek] = useState<string | null>(null);
+  // The prompt being previewed, anchored at the pointer (or below the pill
+  // for keyboard focus).
+  const [peek, setPeek] = useState<{ id: string; x: number; y: number } | null>(
+    null,
+  );
   // The stored custom template ("" = unset), so a blur that changed nothing
   // writes nothing.
   const savedCustom = useRef("");
@@ -601,11 +641,6 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
     api.setSetting("summary_preset", id).catch((e) => reportError(e));
   };
 
-  // Previewing while Custom is selected would swap the field being edited
-  // out from under the user, so the peek stays off in that mode.
-  const peeked =
-    !isCustom && peek ? presets.find((p) => p.id === peek) : undefined;
-
   return (
     <div className="settings-prompt">
       <div className="settings-row-text">
@@ -619,6 +654,7 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
         role="radiogroup"
         aria-label={t("settings.ai.summaryPrompt")}
         onMouseLeave={() => setPeek(null)}
+        onWheel={() => setPeek(null)}
       >
         {presets.map((p) => (
           <button
@@ -627,21 +663,16 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
             role="radio"
             aria-checked={preset === p.id}
             onClick={() => select(p.id)}
-            onMouseEnter={() => setPeek(p.id)}
-            onFocus={() => setPeek(p.id)}
+            onMouseEnter={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
+            onMouseMove={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
+            onFocus={(e) => {
+              // Keyboard: anchor below the pill instead of at a cursor.
+              const r = e.currentTarget.getBoundingClientRect();
+              setPeek({ id: p.id, x: r.left, y: r.bottom });
+            }}
             onBlur={() => setPeek(null)}
           >
-            <span className="s-preset-head">
-              <span className="s-preset-name">
-                {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
-              </span>
-              <span className="s-preset-spacer" />
-              {preset === p.id && <Icon name="check" size={13} color="var(--accent)" />}
-            </span>
-            <span className="s-preset-desc">
-              {t(SUMMARY_PRESET_DESCS[p.id] ?? "")}
-            </span>
-            <span className="s-preset-snippet">{promptSnippet(p.template)}</span>
+            {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
           </button>
         ))}
         <button
@@ -649,24 +680,13 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
           role="radio"
           aria-checked={isCustom}
           onClick={() => select("custom")}
-          onMouseEnter={() => setPeek(null)}
+          onMouseEnter={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
+          onMouseMove={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
         >
-          <span className="s-preset-head">
-            <span className="s-preset-name">{t("settings.ai.presetCustom")}</span>
-            <span className="s-preset-spacer" />
-            {isCustom && <Icon name="check" size={13} color="var(--accent)" />}
-          </span>
-          <span className="s-preset-desc">{t("settings.ai.presetCustomDesc")}</span>
-          <span className="s-preset-snippet">
-            {custom.trim() ? promptSnippet(custom) : t("settings.ai.presetCustomHint")}
-          </span>
+          {t("settings.ai.presetCustom")}
         </button>
-        {peeked && (
-          <div className="s-preset-peek">
-            <pre className="s-preset-peek-text">{peeked.template}</pre>
-          </div>
-        )}
       </div>
+      {peek && <PresetBubble peek={peek} presets={presets} custom={custom} />}
       {isCustom && (
         <>
           <textarea
