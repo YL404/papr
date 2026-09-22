@@ -2696,37 +2696,71 @@ button { font-family: inherit; }
   justify-content: flex-end;
   margin-top: 10px;
 }
-/* Preset picker — the summary-prompt chooser. Each option is a pill; the
-   hovered one's prompt opens in a panel below the row (pointer events stay
-   on the pills, so moving between them keeps switching the preview). */
+/* Preset picker — the summary-prompt chooser, laid out like the article
+   list: a row per option (small name, one-line description, clamped prompt
+   preview) with hover and selected states to match. Hovering a row previews
+   its full prompt in a panel below the list. */
 .s-preset-picker {
   position: relative;
   display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  flex-direction: column;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 10px;
 }
 .s-preset {
-  padding: 5px 12px;
-  border: 1px solid var(--hair-strong);
-  border-radius: 999px;
-  background: var(--panel);
-  color: var(--ink-2);
-  font-family: inherit;
-  font-size: 12.5px;
+  display: block;
+  width: 100%;
+  padding: 9px 14px;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--hair);
   cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  transition: background .12s;
 }
-.s-preset:hover { border-color: var(--ink-2); background: var(--hover); }
-.s-preset.active {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+.s-preset:first-child { border-radius: 9px 9px 0 0; }
+.s-preset:last-of-type { border-bottom: 0; border-radius: 0 0 9px 9px; }
+.s-preset:hover { background: var(--hover); }
+.s-preset.active { background: var(--accent-soft); }
+.s-preset-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.s-preset-name {
+  font-size: 11.5px;
+  font-weight: 550;
   color: var(--accent-ink);
+  letter-spacing: 0.01em;
 }
+.s-preset-spacer { flex: 1; }
+.s-preset-desc {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.4;
+  margin-bottom: 3px;
+}
+.s-preset-snippet {
+  font-size: 12px;
+  color: var(--muted);
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* The custom field sits below the picker, not glued to it. */
+.s-preset-picker + .s-textarea { margin-top: 10px; }
 .s-preset-peek {
   position: absolute;
   top: calc(100% + 8px);
   left: 0;
   z-index: 10;
-  width: min(440px, 100%);
+  width: 100%;
   max-height: 240px;
   overflow-y: auto;
   padding: 10px 12px;

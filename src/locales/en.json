@@ -413,9 +413,14 @@
       "summaryPromptDesc": "Pick a built-in template — hover one to preview its prompt — or switch to Custom to write your own. {lang} stands for the response-language instruction; changes apply to the next summary",
       "summaryPromptReset": "Restore default",
       "presetGeneral": "General",
+      "presetGeneralDesc": "Leads with the takeaway, then 3–5 bullets",
       "presetBrief": "Brief",
+      "presetBriefDesc": "A single sentence, for scanning high-volume feeds",
       "presetDeep": "In-depth",
-      "presetCustom": "Custom"
+      "presetDeepDesc": "A longer structured briefing, for articles worth the time",
+      "presetCustom": "Custom",
+      "presetCustomDesc": "Write your own system prompt",
+      "presetCustomHint": "Not set yet — the General template applies"
     },
     "advanced": {
       "experimental": "Experimental features",

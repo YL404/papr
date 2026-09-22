@@ -529,6 +529,22 @@ const SUMMARY_PRESET_LABELS: Record<string, string> = {
   deep: "settings.ai.presetDeep",
 };
 
+/** One-line descriptions of the built-in presets, keyed the same way. These
+ *  say what a preset is *for* — the prompt itself stays behind the hover
+ *  preview. */
+const SUMMARY_PRESET_DESCS: Record<string, string> = {
+  general: "settings.ai.presetGeneralDesc",
+  brief: "settings.ai.presetBriefDesc",
+  deep: "settings.ai.presetDeepDesc",
+};
+
+/** The opening of a prompt, flattened onto the picker row's preview line. The
+ *  `{lang}` token is dropped — it is a substitution slot, not prompt text. */
+function promptSnippet(template: string): string {
+  const flat = template.replace(/\{lang\}/g, "").replace(/\s+/g, " ").trim();
+  return flat.length > 80 ? `${flat.slice(0, 80)}…` : flat;
+}
+
 /** The AI-summary prompt: a picker over the built-in presets plus a Custom
  *  option. A preset's text stays out of the way until the option is hovered
  *  (or keyboard-focused); choosing Custom brings up the editable field. A
@@ -615,7 +631,17 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
             onFocus={() => setPeek(p.id)}
             onBlur={() => setPeek(null)}
           >
-            {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
+            <span className="s-preset-head">
+              <span className="s-preset-name">
+                {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
+              </span>
+              <span className="s-preset-spacer" />
+              {preset === p.id && <Icon name="check" size={13} color="var(--accent)" />}
+            </span>
+            <span className="s-preset-desc">
+              {t(SUMMARY_PRESET_DESCS[p.id] ?? "")}
+            </span>
+            <span className="s-preset-snippet">{promptSnippet(p.template)}</span>
           </button>
         ))}
         <button
@@ -625,7 +651,15 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
           onClick={() => select("custom")}
           onMouseEnter={() => setPeek(null)}
         >
-          {t("settings.ai.presetCustom")}
+          <span className="s-preset-head">
+            <span className="s-preset-name">{t("settings.ai.presetCustom")}</span>
+            <span className="s-preset-spacer" />
+            {isCustom && <Icon name="check" size={13} color="var(--accent)" />}
+          </span>
+          <span className="s-preset-desc">{t("settings.ai.presetCustomDesc")}</span>
+          <span className="s-preset-snippet">
+            {custom.trim() ? promptSnippet(custom) : t("settings.ai.presetCustomHint")}
+          </span>
         </button>
         {peeked && (
           <div className="s-preset-peek">
