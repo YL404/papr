@@ -2689,15 +2689,19 @@ button { font-family: inherit; }
 .settings-prompt:last-child { border-bottom: 0; }
 /* The stacked label needs its own gap to what follows it — the row layout's
    side-by-side alignment no longer supplies one, and without it the preset
-   dropdown / textarea sit glued to the description line. */
-.settings-prompt .settings-row-text { margin-bottom: 10px; }
+   dropdown / textarea sit glued to the description line. Direct child only:
+   a Row nested in this block (the summary picker) aligns its own text. */
+.settings-prompt > .settings-row-text { margin-bottom: 10px; }
+/* A Row inside a prompt block rides on the block's own padding instead of
+   stacking another 12px, and takes no hairline of its own. */
+.settings-prompt .settings-row { padding: 0; border-bottom: 0; }
 .settings-prompt-foot {
   display: flex;
   justify-content: flex-end;
   margin-top: 10px;
 }
-/* Preset picker — one row of pills; the hovered option's prompt opens in a
-   bubble at the pointer (see .s-preset-bubble). */
+/* Preset picker — one row of pills trailing the summary-prompt row; the
+   hovered option's prompt opens in a bubble at the pointer. */
 .s-preset-picker {
   position: relative;
   display: flex;
@@ -2720,28 +2724,30 @@ button { font-family: inherit; }
   background: var(--accent-soft);
   color: var(--accent-ink);
 }
-/* The custom field sits below the picker, not glued to it. (`~` not `+`:
-   the hover bubble may render between the two.) */
-.s-preset-picker ~ .s-textarea { margin-top: 10px; }
+/* The custom field sits below the row, not glued to it. */
+.settings-row ~ .s-textarea { margin-top: 10px; }
+/* The article-list hover preview's chrome, at a z-index above the settings
+   backdrop (which sits at 150). Portalled to <body>, so nothing here is
+   scoped by the settings panes. */
 .s-preset-bubble {
   position: fixed;
   z-index: 1000;
   width: min(420px, calc(100vw - 16px));
   max-height: min(320px, 50vh);
   overflow-y: auto;
-  padding: 10px 12px;
-  background: var(--panel);
+  padding: 14px 16px;
+  background: var(--panel-2);
   border: 1px solid var(--hair-strong);
-  border-radius: 8px;
+  border-radius: 12px;
   box-shadow: var(--shadow-pop);
   /* Follows the pointer, so it must never eat the hover it belongs to. */
   pointer-events: none;
+  animation: cp-pop .15s ease;
 }
 .s-preset-bubble-name {
   font-size: 11.5px;
-  font-weight: 550;
+  font-weight: 600;
   color: var(--accent-ink);
-  letter-spacing: 0.01em;
 }
 .s-preset-bubble-desc {
   font-size: 12px;

@@ -1,5 +1,12 @@
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { cloneElement, isValidElement, useEffect, useRef, useState } from "react";
+import {
+  cloneElement,
+  isValidElement,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
@@ -10,6 +17,7 @@ import { useFocusTrap } from "../hooks/useFocusTrap";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
 import { feedHost } from "../lib/feedMeta";
 import { modKey, modCombo } from "../lib/platform";
+import { clampToViewport } from "../lib/viewport";
 import { reportError } from "../toast";
 import { downloadFile } from "../lib/download";
 import { NO_AUTOCORRECT } from "../lib/inputProps";
@@ -537,15 +545,17 @@ const SUMMARY_PRESET_DESCS: Record<string, string> = {
   deep: "settings.ai.presetDeepDesc",
 };
 
-/** The bubble's box, used only to decide which side of the pointer it opens
- *  on — the real size is whatever the prompt needs, up to the CSS caps. */
+/** The bubble's nominal box, used only to decide where it fits — the real
+ *  size is whatever the prompt needs, up to the CSS caps. */
 const BUBBLE_W = 420;
 const BUBBLE_H = 320;
 
 /** The prompt preview bubble: follows the pointer while a preset option is
  *  hovered (keyboard focus anchors it below the option instead) and carries
- *  the whole prompt, flipping to the other side of the pointer near the
- *  viewport edges. */
+ *  the whole prompt. Portalled to <body> — `.settings-scroll` is a
+ *  `contain: layout paint` box, so a fixed descendant would be laid out and
+ *  clipped against it (the same reason the font picker portals its
+ *  dropdown). */
 function PresetBubble({
   peek,
   presets,
@@ -568,17 +578,20 @@ function PresetBubble({
     ? custom.trim() || t("settings.ai.presetCustomHint")
     : p?.template ?? "";
 
-  const flipX = peek.x + 16 + BUBBLE_W > window.innerWidth - 8;
-  const flipY = peek.y + 20 + BUBBLE_H > window.innerHeight - 8;
-  const left = flipX ? Math.max(8, peek.x - BUBBLE_W - 16) : peek.x + 16;
-  const top = flipY ? Math.max(8, peek.y - BUBBLE_H - 16) : peek.y + 20;
+  const { left, top } = clampToViewport({
+    x: peek.x + 16,
+    y: peek.y + 20,
+    width: BUBBLE_W,
+    height: BUBBLE_H,
+  });
 
-  return (
+  return createPortal(
     <div className="s-preset-bubble" style={{ left, top }} role="tooltip">
       <div className="s-preset-bubble-name">{name}</div>
       {desc && <div className="s-preset-bubble-desc">{desc}</div>}
       <pre className="s-preset-bubble-text">{body}</pre>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -643,49 +656,48 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
 
   return (
     <div className="settings-prompt">
-      <div className="settings-row-text">
-        <div className="settings-row-label">{t("settings.ai.summaryPrompt")}</div>
-        <div className="settings-row-desc">
-          {t("settings.ai.summaryPromptDesc")}
-        </div>
-      </div>
-      <div
-        className="s-preset-picker"
-        role="radiogroup"
-        aria-label={t("settings.ai.summaryPrompt")}
-        onMouseLeave={() => setPeek(null)}
-        onWheel={() => setPeek(null)}
+      <Row
+        label={t("settings.ai.summaryPrompt")}
+        desc={t("settings.ai.summaryPromptDesc")}
       >
-        {presets.map((p) => (
-          <button
-            key={p.id}
-            className={`s-preset${preset === p.id ? " active" : ""}`}
-            role="radio"
-            aria-checked={preset === p.id}
-            onClick={() => select(p.id)}
-            onMouseEnter={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
-            onMouseMove={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
-            onFocus={(e) => {
-              // Keyboard: anchor below the pill instead of at a cursor.
-              const r = e.currentTarget.getBoundingClientRect();
-              setPeek({ id: p.id, x: r.left, y: r.bottom });
-            }}
-            onBlur={() => setPeek(null)}
-          >
-            {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
-          </button>
-        ))}
-        <button
-          className={`s-preset${isCustom ? " active" : ""}`}
-          role="radio"
-          aria-checked={isCustom}
-          onClick={() => select("custom")}
-          onMouseEnter={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
-          onMouseMove={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
+        <div
+          className="s-preset-picker"
+          role="radiogroup"
+          aria-label={t("settings.ai.summaryPrompt")}
+          onMouseLeave={() => setPeek(null)}
+          onWheel={() => setPeek(null)}
         >
-          {t("settings.ai.presetCustom")}
-        </button>
-      </div>
+          {presets.map((p) => (
+            <button
+              key={p.id}
+              className={`s-preset${preset === p.id ? " active" : ""}`}
+              role="radio"
+              aria-checked={preset === p.id}
+              onClick={() => select(p.id)}
+              onMouseEnter={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
+              onMouseMove={(e) => setPeek({ id: p.id, x: e.clientX, y: e.clientY })}
+              onFocus={(e) => {
+                // Keyboard: anchor below the pill instead of at a cursor.
+                const r = e.currentTarget.getBoundingClientRect();
+                setPeek({ id: p.id, x: r.left, y: r.bottom });
+              }}
+              onBlur={() => setPeek(null)}
+            >
+              {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
+            </button>
+          ))}
+          <button
+            className={`s-preset${isCustom ? " active" : ""}`}
+            role="radio"
+            aria-checked={isCustom}
+            onClick={() => select("custom")}
+            onMouseEnter={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
+            onMouseMove={(e) => setPeek({ id: "custom", x: e.clientX, y: e.clientY })}
+          >
+            {t("settings.ai.presetCustom")}
+          </button>
+        </div>
+      </Row>
       {peek && <PresetBubble peek={peek} presets={presets} custom={custom} />}
       {isCustom && (
         <>
