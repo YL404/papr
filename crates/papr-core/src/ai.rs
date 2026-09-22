@@ -10,7 +10,7 @@
 
 use crate::error::{AppError, AppResult};
 use reqwest::{Client, Response};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::time::Duration;
 
@@ -176,6 +176,88 @@ impl AiConfig {
     /// exposed.
     pub fn model(&self) -> &str {
         &self.model
+    }
+}
+
+/// One provider account in the user's AI configuration: a named credential
+/// set plus the models offered under it. Mirrors the JSON the frontend
+/// persists under the `ai_providers` setting.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProviderProfile {
+    /// Stable id the active selection points at; never sent to the provider.
+    pub id: String,
+    /// User-editable label, shown in Settings only.
+    #[serde(default)]
+    pub name: String,
+    /// `anthropic` / `openai` / `deepseek`; any other value resolves to
+    /// Anthropic, exactly as a raw `ai_provider` setting does.
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub api_key: String,
+    /// Empty means the kind's official endpoint (see
+    /// [`Provider::default_base_url`]).
+    #[serde(default)]
+    pub base_url: String,
+    /// Model names offered under this provider. The first doubles as the
+    /// fallback when no model is selected.
+    #[serde(default)]
+    pub models: Vec<String>,
+}
+
+/// The whole multi-provider AI configuration: every saved provider plus the
+/// provider+model currently selected for summaries and LLM translation.
+#[derive(Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct AiProfiles {
+    #[serde(default)]
+    pub active_provider_id: String,
+    #[serde(default)]
+    pub active_model: String,
+    #[serde(default)]
+    pub providers: Vec<ProviderProfile>,
+}
+
+impl AiProfiles {
+    /// Resolve the active provider+model into the four raw values
+    /// [`AiConfig::new`] takes: `(provider kind, api key, model, base url)`.
+    /// `None` when no provider is saved at all.
+    ///
+    /// The model is `None` — not an empty string — when the active provider
+    /// lists no usable model, so `AiConfig::new` applies that kind's own
+    /// default. An `active_provider_id` matching nothing (its provider was
+    /// removed) falls back to the first saved provider, so a stale selection
+    /// degrades instead of failing.
+    pub fn active(&self) -> Option<(String, String, Option<String>, Option<String>)> {
+        let provider = self
+            .providers
+            .iter()
+            .find(|p| p.id == self.active_provider_id)
+            .or_else(|| self.providers.first())?;
+        // The selected model must still exist under its provider — a model
+        // renamed or deleted in Settings must not leave the backend calling
+        // one the user removed. Otherwise the first listed model wins.
+        let selected = self.active_model.trim();
+        let model = provider
+            .models
+            .iter()
+            .map(|m| m.trim())
+            .find(|m| !m.is_empty() && *m == selected)
+            .or_else(|| {
+                provider
+                    .models
+                    .iter()
+                    .map(|m| m.trim())
+                    .find(|m| !m.is_empty())
+            })
+            .map(str::to_string);
+        Some((
+            provider.kind.clone(),
+            provider.api_key.clone(),
+            model,
+            Some(provider.base_url.clone()),
+        ))
     }
 }
 
@@ -508,7 +590,7 @@ fn extract_delta(v: &Value, provider: Provider) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{extract_delta, extract_error, Provider};
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     #[test]
     fn openai_null_error_field_is_not_an_error() {
@@ -797,5 +879,96 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cfg.model, "gpt-4.1-mini");
+    }
+
+    // --- AiProfiles: the multi-provider settings layout. ---
+
+    use super::AiProfiles;
+
+    fn profiles(value: Value) -> AiProfiles {
+        serde_json::from_str(&value.to_string()).unwrap()
+    }
+
+    #[test]
+    fn profiles_resolve_the_selected_provider_and_model() {
+        let p = profiles(json!({
+            "activeProviderId": "p2",
+            "activeModel": "gpt-4.1",
+            "providers": [
+                { "id": "p1", "name": "Anthropic", "kind": "anthropic",
+                  "apiKey": "sk-a", "baseUrl": "", "models": ["claude-sonnet-4-6"] },
+                { "id": "p2", "name": "OpenAI", "kind": "openai",
+                  "apiKey": "sk-b", "baseUrl": "https://proxy.example.com/v1",
+                  "models": ["gpt-4.1-mini", "gpt-4.1"] }
+            ]
+        }));
+        let (kind, key, model, base_url) = p.active().unwrap();
+        assert_eq!(kind, "openai");
+        assert_eq!(key, "sk-b");
+        assert_eq!(model.as_deref(), Some("gpt-4.1"));
+        assert_eq!(base_url.as_deref(), Some("https://proxy.example.com/v1"));
+    }
+
+    #[test]
+    fn profiles_fall_back_to_the_first_model_when_the_selected_one_is_gone() {
+        // The user deleted (or renamed) the model that was selected — the
+        // backend must not keep calling it.
+        let p = profiles(json!({
+            "activeProviderId": "p1",
+            "activeModel": "claude-opus-4-1",
+            "providers": [
+                { "id": "p1", "kind": "anthropic", "apiKey": "sk-a",
+                  "models": ["claude-sonnet-4-6"] }
+            ]
+        }));
+        assert_eq!(p.active().unwrap().2.as_deref(), Some("claude-sonnet-4-6"));
+    }
+
+    #[test]
+    fn profiles_fall_back_to_the_first_provider_when_the_selection_is_stale() {
+        let p = profiles(json!({
+            "activeProviderId": "gone",
+            "activeModel": "",
+            "providers": [
+                { "id": "p1", "kind": "deepseek", "apiKey": "sk-a", "models": ["deepseek-chat"] }
+            ]
+        }));
+        let (kind, key, model, _) = p.active().unwrap();
+        assert_eq!(kind, "deepseek");
+        assert_eq!(key, "sk-a");
+        assert_eq!(model.as_deref(), Some("deepseek-chat"));
+    }
+
+    #[test]
+    fn profiles_without_models_leave_the_model_to_the_provider_default() {
+        let p = profiles(json!({
+            "activeProviderId": "p1",
+            "activeModel": "",
+            "providers": [
+                { "id": "p1", "kind": "openai", "apiKey": "sk-a", "models": [] }
+            ]
+        }));
+        // `None` (not "") so `AiConfig::new` applies the OpenAI default.
+        assert_eq!(p.active().unwrap().2, None);
+    }
+
+    #[test]
+    fn profiles_with_no_providers_resolve_to_none() {
+        let p = profiles(json!({ "activeProviderId": "p1", "providers": [] }));
+        assert!(p.active().is_none());
+    }
+
+    #[test]
+    fn profiles_tolerate_missing_optional_fields() {
+        // A hand-edited or future-written blob must still resolve: only `id`
+        // and `kind` are load-bearing for the request itself.
+        let p = profiles(json!({
+            "providers": [{ "id": "p1", "kind": "openai", "apiKey": "sk-a" }]
+        }));
+        let (kind, key, model, base_url) = p.active().unwrap();
+        assert_eq!(kind, "openai");
+        assert_eq!(key, "sk-a");
+        assert_eq!(model, None);
+        assert_eq!(base_url.as_deref(), Some(""));
     }
 }

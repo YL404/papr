@@ -660,7 +660,26 @@ pub async fn set_setting(
 // ─────────────────────────── AI ───────────────────────────
 
 /// Load the AI provider configuration from the settings table.
+///
+/// The `ai_providers` JSON (Settings → AI's provider manager) is the source
+/// of truth once written; the flat `ai_provider` / `ai_api_key` / `ai_model`
+/// / `ai_base_url` keys are the single-provider layout it replaced, still
+/// read when the JSON is absent (an install that hasn't opened Settings → AI
+/// since the upgrade) or unparseable.
 fn load_ai_config(conn: &rusqlite::Connection) -> AppResult<AiConfig> {
+    if let Some(json) = db::get_setting(conn, "ai_providers")? {
+        if let Ok(profiles) = serde_json::from_str::<ai::AiProfiles>(&json) {
+            return match profiles.active() {
+                Some((kind, key, model, base_url)) => {
+                    AiConfig::new(Some(kind), Some(key), model, base_url)
+                }
+                // No provider saved: the same coded failure an install with
+                // no key at all produces. Falling back to the flat keys here
+                // would resurrect a provider the user just deleted.
+                None => Err(AppError::code("noAiKey")),
+            };
+        }
+    }
     AiConfig::new(
         db::get_setting(conn, "ai_provider")?,
         db::get_setting(conn, "ai_api_key")?,

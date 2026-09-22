@@ -13,7 +13,12 @@ import { modKey, modCombo } from "../lib/platform";
 import { reportError } from "../toast";
 import { downloadFile } from "../lib/download";
 import { NO_AUTOCORRECT } from "../lib/inputProps";
-import type { Feed } from "../types";
+import type {
+  AiProfiles,
+  AiProviderEntry,
+  AiProviderKind,
+  Feed,
+} from "../types";
 import Icon, { type IconName } from "./Icon";
 import ConfirmDialog from "./ConfirmDialog";
 import FeedAvatar from "./FeedAvatar";
@@ -1662,56 +1667,239 @@ function DangerZone({ onToast }: { onToast: (m: string) => void }) {
  *  services. The reader can override this per translation, but only temporarily. */
 type TranslateEngine = "llm" | "google" | "deepl" | "bing";
 
+/** The provider kinds Settings → AI can configure. The wire format each kind
+ *  speaks (Anthropic messages vs OpenAI-compatible chat completions) is
+ *  decided in `papr_core::ai`; these labels are display-only. */
+const AI_KINDS: { value: AiProviderKind; label: string }[] = [
+  { value: "anthropic", label: "Anthropic" },
+  { value: "openai", label: "OpenAI" },
+  { value: "deepseek", label: "DeepSeek" },
+];
+
+const kindLabel = (kind: AiProviderKind) =>
+  AI_KINDS.find((k) => k.value === kind)?.label ?? kind;
+
+/** Each kind's default model and official endpoint, mirroring
+ *  `AiConfig::new` / `Provider::default_base_url`. Used only as input
+ *  placeholders — the backend applies the real fallbacks. */
+const DEFAULT_MODEL: Record<AiProviderKind, string> = {
+  anthropic: "claude-sonnet-4-6",
+  openai: "gpt-4.1-mini",
+  deepseek: "deepseek-chat",
+};
+const DEFAULT_BASE_URL: Record<AiProviderKind, string> = {
+  anthropic: "https://api.anthropic.com/v1",
+  openai: "https://api.openai.com/v1",
+  deepseek: "https://api.deepseek.com",
+};
+
+/** Parse the persisted `ai_providers` JSON, returning `null` for anything
+ *  unusable (absent, corrupt, or not the shape this build writes) so the
+ *  caller falls back to the legacy flat keys. */
+function parseAiProfiles(raw: string | null): AiProfiles | null {
+  if (!raw) return null;
+  try {
+    const v = JSON.parse(raw) as Partial<AiProfiles>;
+    if (!v || !Array.isArray(v.providers)) return null;
+    const providers: AiProviderEntry[] = v.providers
+      .filter((p) => p && typeof p.id === "string" && typeof p.kind === "string")
+      .map((p) => ({
+        id: p.id,
+        name: typeof p.name === "string" ? p.name : "",
+        kind: AI_KINDS.some((k) => k.value === p.kind) ? p.kind : "anthropic",
+        apiKey: typeof p.apiKey === "string" ? p.apiKey : "",
+        baseUrl: typeof p.baseUrl === "string" ? p.baseUrl : "",
+        models: Array.isArray(p.models)
+          ? p.models.filter((m): m is string => typeof m === "string")
+          : [],
+      }));
+    return {
+      activeProviderId:
+        typeof v.activeProviderId === "string" ? v.activeProviderId : "",
+      activeModel: typeof v.activeModel === "string" ? v.activeModel : "",
+      providers,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/** Build the multi-provider config out of the pre-manager flat settings, so
+ *  an install upgrading into this layout keeps its single provider (key,
+ *  model and endpoint included) without re-entering anything. */
+function migrateLegacyProfiles(
+  provider: string | null,
+  apiKey: string | null,
+  model: string | null,
+  baseUrl: string | null,
+): AiProfiles {
+  const kind: AiProviderKind =
+    provider === "openai" || provider === "deepseek" || provider === "anthropic"
+      ? provider
+      : "anthropic";
+  const entry: AiProviderEntry = {
+    id: "p-legacy",
+    name: kindLabel(kind),
+    kind,
+    apiKey: apiKey ?? "",
+    baseUrl: baseUrl ?? "",
+    models: model ? [model] : [],
+  };
+  return {
+    activeProviderId: entry.id,
+    activeModel: model ?? "",
+    providers: [entry],
+  };
+}
+
+/** One provider card: its credentials plus the models offered under it. The
+ *  checked radio is the model summaries and LLM translation currently use.
+ *  Text fields persist the whole `ai_providers` JSON on blur; the kind
+ *  select and the radios persist immediately. */
+function AiProviderCard({
+  provider,
+  active,
+  activeModel,
+  onPatch,
+  onRemove,
+  onAddModel,
+  onPatchModel,
+  onCommitModel,
+  onRemoveModel,
+  onActivate,
+}: {
+  provider: AiProviderEntry;
+  active: boolean;
+  activeModel: string;
+  onPatch: (patch: Partial<AiProviderEntry>, commit: boolean) => void;
+  onRemove: () => void;
+  onAddModel: () => void;
+  onPatchModel: (index: number, value: string, commit: boolean) => void;
+  onCommitModel: (index: number) => void;
+  onRemoveModel: (index: number) => void;
+  onActivate: (model: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <div className={`s-ai-provider${active ? " active" : ""}`}>
+      <div className="s-ai-provider-head">
+        <input
+          className="s-text-input s-ai-name"
+          value={provider.name}
+          placeholder={kindLabel(provider.kind)}
+          aria-label={t("settings.ai.providerName")}
+          {...NO_AUTOCORRECT}
+          onChange={(e) => onPatch({ name: e.target.value }, false)}
+          onBlur={() =>
+            onPatch({ name: provider.name.trim() || kindLabel(provider.kind) }, true)
+          }
+        />
+        <Select
+          value={provider.kind}
+          options={AI_KINDS}
+          onChange={(v) => onPatch({ kind: v }, true)}
+          aria-label={t("settings.ai.providerKind")}
+        />
+        <button
+          className="icon-btn"
+          title={t("settings.ai.removeProvider")}
+          onClick={onRemove}
+        >
+          <Icon name="trash" size={13} />
+        </button>
+      </div>
+      <div className="s-ai-provider-fields">
+        <label className="s-ai-field">
+          <span>{t("settings.ai.aiApiKey")}</span>
+          <input
+            className="s-text-input"
+            type="password"
+            value={provider.apiKey}
+            placeholder="sk-…"
+            title={t("settings.ai.aiApiKeyDesc")}
+            {...NO_AUTOCORRECT}
+            onChange={(e) => onPatch({ apiKey: e.target.value }, false)}
+            // Trim before persisting — a pasted key routinely carries a
+            // trailing newline / space that would break the auth header.
+            onBlur={() => onPatch({ apiKey: provider.apiKey.trim() }, true)}
+          />
+        </label>
+        <label className="s-ai-field">
+          <span>{t("settings.ai.aiBaseUrl")}</span>
+          <input
+            className="s-text-input"
+            type="text"
+            value={provider.baseUrl}
+            placeholder={DEFAULT_BASE_URL[provider.kind]}
+            title={t("settings.ai.aiBaseUrlDesc")}
+            {...NO_AUTOCORRECT}
+            onChange={(e) => onPatch({ baseUrl: e.target.value }, false)}
+            onBlur={() => onPatch({ baseUrl: provider.baseUrl.trim() }, true)}
+          />
+        </label>
+      </div>
+      <div className="s-ai-models">
+        <div className="s-ai-models-title">{t("settings.ai.models")}</div>
+        {provider.models.map((m, i) => (
+          <div className="s-ai-model" key={i}>
+            <input
+              type="radio"
+              name="ai-active-model"
+              className="s-ai-model-radio"
+              checked={active && m.trim() !== "" && m === activeModel}
+              onChange={() => onActivate(m)}
+              aria-label={t("settings.ai.activeModel")}
+            />
+            <input
+              className="s-text-input s-ai-model-name"
+              value={m}
+              placeholder={DEFAULT_MODEL[provider.kind]}
+              aria-label={t("settings.ai.modelName")}
+              {...NO_AUTOCORRECT}
+              onChange={(e) => onPatchModel(i, e.target.value, false)}
+              // Trim before persisting — a stray space / newline yields a
+              // "model not found" from the provider.
+              onBlur={() => onCommitModel(i)}
+            />
+            <button
+              className="icon-btn"
+              title={t("settings.ai.removeModel")}
+              onClick={() => onRemoveModel(i)}
+            >
+              <Icon name="trash" size={13} />
+            </button>
+          </div>
+        ))}
+        <button className="s-btn" onClick={onAddModel}>
+          <Icon name="plus" size={12} /> {t("settings.ai.addModel")}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** Real AI provider configuration — backing the AI summary feature, plus the
- *  default translation engine + language and the engines' credentials. */
+ *  default translation engine + language and the engines' credentials.
+ *  Providers and their models live in the `ai_providers` setting as a set;
+ *  exactly one provider+model is selected at a time. */
 function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
-  const [provider, setProvider] = useState<"anthropic" | "openai" | "deepseek">(
-    "anthropic",
-  );
-  const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState("");
-  const [baseUrl, setBaseUrl] = useState("");
+  const [profiles, setProfiles] = useState<AiProfiles | null>(null);
   // Default engine + target language for translation. Empty lang = follow the UI
   // language until the user picks one.
   const [engine, setEngine] = useState<TranslateEngine>("llm");
   const [translateLang, setTranslateLang] = useState("");
-  const savedKey = useRef("");
-  const savedModel = useRef("");
-  const savedBaseUrl = useRef("");
 
-  useEffect(() => {
-    Promise.all([
-      api.getSetting("ai_provider"),
-      api.getSetting("ai_api_key"),
-      api.getSetting("ai_model"),
-      api.getSetting("ai_base_url"),
-      api.getSetting("translate_engine"),
-      api.getSetting("translate_target_lang"),
-    ])
-      .then(([p, k, m, b, eng, tl]) => {
-        if (p === "openai" || p === "anthropic" || p === "deepseek")
-          setProvider(p);
-        if (k) {
-          setApiKey(k);
-          savedKey.current = k;
-        }
-        if (m) {
-          setModel(m);
-          savedModel.current = m;
-        }
-        if (b) {
-          setBaseUrl(b);
-          savedBaseUrl.current = b;
-        }
-        if (eng === "google" || eng === "deepl" || eng === "bing" || eng === "llm")
-          setEngine(eng);
-        if (tl) setTranslateLang(tl);
-      })
-      .catch(() => {});
-  }, []);
+  const persist = (next: AiProfiles) => {
+    setProfiles(next);
+    return api
+      .setSetting("ai_providers", JSON.stringify(next))
+      .catch((e) => reportError(e));
+  };
 
+  /** Persist a translation preference — engine and target language still
+   *  live in their own flat setting keys, one per row. */
   const save = (key: string, value: string, label: string) => {
     api
       .setSetting(key, value)
@@ -1719,126 +1907,197 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
       .catch((e) => reportError(e));
   };
 
-  const placeholder =
-    provider === "openai"
-      ? t("settings.ai.aiModelPlaceholderOpenai")
-      : provider === "deepseek"
-        ? t("settings.ai.aiModelPlaceholderDeepseek")
-        : t("settings.ai.aiModelPlaceholderAnthropic");
+  useEffect(() => {
+    Promise.all([
+      api.getSetting("ai_providers"),
+      api.getSetting("ai_provider"),
+      api.getSetting("ai_api_key"),
+      api.getSetting("ai_model"),
+      api.getSetting("ai_base_url"),
+      api.getSetting("translate_engine"),
+      api.getSetting("translate_target_lang"),
+    ])
+      .then(([stored, p, k, m, b, eng, tl]) => {
+        const parsed = parseAiProfiles(stored);
+        if (parsed) {
+          setProfiles(parsed);
+        } else {
+          // First visit since the multi-provider layout: carry the single
+          // provider over and persist it, retiring the flat keys.
+          void persist(migrateLegacyProfiles(p, k, m, b));
+        }
+        if (eng === "google" || eng === "deepl" || eng === "bing" || eng === "llm")
+          setEngine(eng);
+        if (tl) setTranslateLang(tl);
+      })
+      .catch(() => {});
+    // Runs once on mount: the settings are read here and every later edit
+    // goes through `persist`, so there is nothing to re-subscribe to.
+  }, []);
 
-  const baseUrlPlaceholder =
-    provider === "openai"
-      ? "https://api.openai.com/v1"
-      : provider === "deepseek"
-        ? "https://api.deepseek.com"
-        : "https://api.anthropic.com/v1";
+  /** Apply `patch` to one provider. `commit` persists the whole JSON; text
+   *  fields pass `false` while typing and `true` on blur. */
+  const patchProvider = (id: string, patch: Partial<AiProviderEntry>, commit: boolean) => {
+    if (!profiles) return;
+    const next: AiProfiles = {
+      ...profiles,
+      providers: profiles.providers.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+    };
+    setProfiles(next);
+    if (commit) void persist(next);
+  };
+
+  const addProvider = () => {
+    if (!profiles) return;
+    // A new provider starts as a second credential set for the kind already
+    // in use — the common case is another key for the same API family.
+    const kind =
+      profiles.providers.find((p) => p.id === profiles.activeProviderId)?.kind ?? "anthropic";
+    const base = kindLabel(kind);
+    const taken = new Set(profiles.providers.map((p) => p.name));
+    let name = base;
+    for (let n = 2; taken.has(name); n += 1) name = `${base} ${n}`;
+    void persist({
+      ...profiles,
+      providers: [
+        ...profiles.providers,
+        {
+          id: `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+          name,
+          kind,
+          apiKey: "",
+          baseUrl: "",
+          models: [],
+        },
+      ],
+    });
+    onToast(t("settings.ai.providerAdded"));
+  };
+
+  const removeProvider = (id: string) => {
+    if (!profiles) return;
+    const removed = profiles.providers.find((p) => p.id === id);
+    const providers = profiles.providers.filter((p) => p.id !== id);
+    // Removing the provider in use re-points the selection at the first
+    // remaining one, so summaries keep working without another visit here.
+    const next: AiProfiles =
+      profiles.activeProviderId === id
+        ? {
+            activeProviderId: providers[0]?.id ?? "",
+            activeModel: providers[0]?.models.find((m) => m.trim() !== "") ?? "",
+            providers,
+          }
+        : { ...profiles, providers };
+    void persist(next);
+    if (removed)
+      onToast(
+        t("settings.ai.providerRemoved", {
+          name: removed.name || kindLabel(removed.kind),
+        }),
+      );
+  };
+
+  const addModel = (providerId: string) => {
+    if (!profiles) return;
+    void persist({
+      ...profiles,
+      providers: profiles.providers.map((p) =>
+        p.id === providerId ? { ...p, models: [...p.models, ""] } : p,
+      ),
+    });
+  };
+
+  const patchModel = (providerId: string, index: number, value: string, commit: boolean) => {
+    if (!profiles) return;
+    const provider = profiles.providers.find((p) => p.id === providerId);
+    if (!provider) return;
+    // Renaming the model in use moves the selection with it, so the radio
+    // stays checked and the backend keeps calling the same model.
+    const renamesActive =
+      profiles.activeProviderId === providerId && provider.models[index] === profiles.activeModel;
+    const next: AiProfiles = {
+      ...profiles,
+      activeModel: renamesActive ? value : profiles.activeModel,
+      providers: profiles.providers.map((p) =>
+        p.id === providerId
+          ? { ...p, models: p.models.map((m, i) => (i === index ? value : m)) }
+          : p,
+      ),
+    };
+    setProfiles(next);
+    if (commit) void persist(next);
+  };
+
+  const commitModel = (providerId: string, index: number) => {
+    const raw = profiles?.providers.find((p) => p.id === providerId)?.models[index];
+    if (raw == null) return;
+    const trimmed = raw.trim();
+    // An abandoned draft row (added, never named) disappears on blur rather
+    // than lingering as an unselectable empty entry.
+    if (trimmed === "") {
+      removeModel(providerId, index);
+      return;
+    }
+    patchModel(providerId, index, trimmed, true);
+  };
+
+  const removeModel = (providerId: string, index: number) => {
+    if (!profiles) return;
+    const removed = profiles.providers.find((p) => p.id === providerId)?.models[index];
+    const next: AiProfiles = {
+      ...profiles,
+      providers: profiles.providers.map((p) =>
+        p.id === providerId ? { ...p, models: p.models.filter((_, i) => i !== index) } : p,
+      ),
+      // Removing the model in use clears the selection; the backend then
+      // falls back to the provider's first model (or its kind default).
+      activeModel:
+        profiles.activeProviderId === providerId && removed === profiles.activeModel
+          ? ""
+          : profiles.activeModel,
+    };
+    void persist(next);
+  };
+
+  const activate = (providerId: string, model: string) => {
+    if (!profiles) return;
+    const name = model.trim();
+    if (!name) return;
+    void persist({ ...profiles, activeProviderId: providerId, activeModel: name });
+    onToast(t("settings.ai.modelActivated", { model: name }));
+  };
 
   return (
     <div className="settings-group">
       <h3 className="settings-group-title">{t("settings.ai.aiSummary")}</h3>
-      <Row
-        label={t("settings.ai.aiProvider")}
-        desc={t("settings.ai.aiProviderDesc")}
-      >
-        <Select
-          value={provider}
-          options={[
-            { value: "anthropic", label: "Anthropic" },
-            { value: "openai", label: "OpenAI" },
-            { value: "deepseek", label: "DeepSeek" },
-          ]}
-          onChange={(v) => {
-            setProvider(v);
-            // The model name and base URL are provider-specific — carrying
-            // them over would send e.g. an OpenAI model to Anthropic. Clear
-            // both so the backend falls back to the new provider's defaults.
-            setModel("");
-            savedModel.current = "";
-            setBaseUrl("");
-            savedBaseUrl.current = "";
-            Promise.all([
-              api.setSetting("ai_provider", v),
-              api.setSetting("ai_model", ""),
-              api.setSetting("ai_base_url", ""),
-            ])
-              .then(() =>
-                onToast(
-                  t("settings.ai.aiSaved", {
-                    label: t("settings.ai.aiProviderLabel"),
-                  }),
-                ),
-              )
-              .catch((e) => reportError(e));
-          }}
-        />
-      </Row>
-      <Row
-        label={t("settings.ai.aiApiKey")}
-        desc={t("settings.ai.aiApiKeyDesc")}
-      >
-        <input
-          className="s-text-input"
-          type="password"
-          {...NO_AUTOCORRECT}
-          value={apiKey}
-          placeholder="sk-…"
-          onChange={(e) => setApiKey(e.target.value)}
-          onBlur={() => {
-            // Trim before persisting — a pasted key routinely carries a
-            // trailing newline / space that would break the auth header.
-            const trimmed = apiKey.trim();
-            if (trimmed !== apiKey) setApiKey(trimmed);
-            if (trimmed !== savedKey.current) {
-              savedKey.current = trimmed;
-              save("ai_api_key", trimmed, t("settings.ai.aiApiKeyLabel"));
-            }
-          }}
-        />
-      </Row>
-      <Row
-        label={t("settings.ai.aiModel")}
-        desc={t("settings.ai.aiModelDesc")}
-      >
-        <input
-          className="s-text-input"
-          type="text"
-          {...NO_AUTOCORRECT}
-          value={model}
-          placeholder={placeholder}
-          onChange={(e) => setModel(e.target.value)}
-          onBlur={() => {
-            // Trim before persisting — a pasted model name with a stray
-            // space / newline yields a "model not found" from the provider.
-            const trimmed = model.trim();
-            if (trimmed !== model) setModel(trimmed);
-            if (trimmed !== savedModel.current) {
-              savedModel.current = trimmed;
-              save("ai_model", trimmed, t("settings.ai.aiModelLabel"));
-            }
-          }}
-        />
-      </Row>
-      <Row
-        label={t("settings.ai.aiBaseUrl")}
-        desc={t("settings.ai.aiBaseUrlDesc")}
-      >
-        <input
-          className="s-text-input"
-          type="text"
-          {...NO_AUTOCORRECT}
-          value={baseUrl}
-          placeholder={baseUrlPlaceholder}
-          onChange={(e) => setBaseUrl(e.target.value)}
-          onBlur={() => {
-            const trimmed = baseUrl.trim();
-            if (trimmed !== baseUrl) setBaseUrl(trimmed);
-            if (trimmed !== savedBaseUrl.current) {
-              savedBaseUrl.current = trimmed;
-              save("ai_base_url", trimmed, t("settings.ai.aiBaseUrlLabel"));
-            }
-          }}
-        />
-      </Row>
+      <p className="settings-group-desc" style={{ marginBottom: 14 }}>
+        {t("settings.ai.providersDesc")}
+      </p>
+      {profiles && (
+        <>
+          {profiles.providers.map((p) => (
+            <AiProviderCard
+              key={p.id}
+              provider={p}
+              active={p.id === profiles.activeProviderId}
+              activeModel={p.id === profiles.activeProviderId ? profiles.activeModel : ""}
+              onPatch={(patch, commit) => patchProvider(p.id, patch, commit)}
+              onRemove={() => removeProvider(p.id)}
+              onAddModel={() => addModel(p.id)}
+              onPatchModel={(i, v, commit) => patchModel(p.id, i, v, commit)}
+              onCommitModel={(i) => commitModel(p.id, i)}
+              onRemoveModel={(i) => removeModel(p.id, i)}
+              onActivate={(m) => activate(p.id, m)}
+            />
+          ))}
+          {profiles.providers.length === 0 && (
+            <div className="s-ai-empty">{t("settings.ai.noProviders")}</div>
+          )}
+          <button className="s-btn" onClick={addProvider}>
+            <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
+          </button>
+        </>
+      )}
       <SummaryPromptEditor onToast={onToast} />
       <Row
         label={t("settings.ai.translateEngine")}

@@ -2724,6 +2724,86 @@ button { font-family: inherit; }
 }
 .s-textarea:focus { border-color: var(--accent); }
 
+/* Settings → AI: provider manager. Each provider is a card holding its
+   credentials plus the models offered under it; the checked radio is the
+   provider+model summaries and LLM translation use. */
+.s-ai-provider {
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--panel);
+  padding: 14px 16px;
+  margin-bottom: 12px;
+}
+.s-ai-provider.active { border-color: var(--accent); }
+.s-ai-provider-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.s-ai-provider-head .s-ai-name {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+}
+.s-ai-provider .icon-btn {
+  width: 26px;
+  height: 26px;
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.s-ai-provider .icon-btn:hover { background: var(--hover); color: var(--danger); }
+.s-ai-provider-fields {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+.s-ai-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+.s-ai-field .s-text-input { width: 100%; }
+.s-ai-models {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hair);
+}
+.s-ai-models-title {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted-2);
+  margin-bottom: 8px;
+}
+.s-ai-model {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.s-ai-model .s-text-input { flex: 1; min-width: 0; width: auto; }
+.s-ai-model-radio { accent-color: var(--accent); cursor: pointer; flex-shrink: 0; }
+.s-ai-empty {
+  padding: 14px 4px;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
 /* ====== App shell + audio mini-player ====== */
 .app-shell {
   display: flex;

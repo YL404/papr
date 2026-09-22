@@ -155,3 +155,32 @@ export type RefreshProgress =
       data: { feedId: number; newArticles: number; error: string | null };
     }
   | { event: "finished"; data: { newArticles: number } };
+
+/** An LLM API family Settings → AI can configure. The wire format each one
+ *  speaks (Anthropic messages vs OpenAI-compatible chat completions) is
+ *  decided in `papr_core::ai`. */
+export type AiProviderKind = "anthropic" | "openai" | "deepseek";
+
+/** One provider account: a named credential set plus the models offered
+ *  under it. Persisted as JSON in the `ai_providers` setting (mirrors
+ *  `papr_core::ai::ProviderProfile`). */
+export interface AiProviderEntry {
+  id: string;
+  /** User-editable label, shown in Settings only. */
+  name: string;
+  kind: AiProviderKind;
+  apiKey: string;
+  /** Empty = the provider kind's official endpoint. */
+  baseUrl: string;
+  /** Model names offered under this provider; the first is the fallback when
+   *  no model is selected. */
+  models: string[];
+}
+
+/** The whole multi-provider AI configuration: every saved provider plus the
+ *  provider+model currently selected for summaries and LLM translation. */
+export interface AiProfiles {
+  activeProviderId: string;
+  activeModel: string;
+  providers: AiProviderEntry[];
+}
