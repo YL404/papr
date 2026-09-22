@@ -874,7 +874,7 @@ button { font-family: inherit; }
   overflow: hidden;
 }
 
-/* small-image variant: text left, square thumb right, equal height */
+/* small-image variant: text left (aligned with no-thumb rows), square thumb right, equal height */
 .art.small-image {
   display: flex;
   align-items: stretch;
@@ -886,8 +886,10 @@ button { font-family: inherit; }
   min-width: 0;
   display: flex;
   flex-direction: column;
+  order: 0;
 }
 .art.small-image .art-thumb {
+  order: 1;
   width: 100px;
   aspect-ratio: 1 / 1;
   border-radius: 8px;
