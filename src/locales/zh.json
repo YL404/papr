@@ -388,6 +388,7 @@
       "aiBaseUrl": "Base URL",
       "aiBaseUrlDesc": "API \u7aef\u70b9\u6839\u5730\u5740\u3002\u7559\u7a7a\u5219\u4f7f\u7528\u5b98\u65b9\u7aef\u70b9\uff0c\u4e5f\u53ef\u6307\u5411\u4efb\u610f\u517c\u5bb9\u670d\u52a1\u5546\uff08OpenRouter\u3001Groq\u3001DeepSeek\u3001\u672c\u5730\u670d\u52a1\u7b49\uff09",
       "models": "模型",
+      "modelCount": "{{count}} 个模型",
       "modelName": "模型名称",
       "addModel": "添加模型",
       "activeModel": "使用此模型",

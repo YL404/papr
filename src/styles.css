@@ -2823,13 +2823,29 @@ button { font-family: inherit; }
   text-align: left;
 }
 .s-ai-folded:hover { background: var(--hover); }
-.s-ai-folded-name { font-weight: 500; white-space: nowrap; }
-.s-ai-folded-kind { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.s-ai-folded-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+/* Kind / model count sit at the far end of the line, clear of the name. */
+.s-ai-folded-kind {
+  margin-left: auto;
+  padding-left: 12px;
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
 .s-ai-folded > svg { flex-shrink: 0; }
+/* The add buttons keep clear of the list above them. */
+.s-ai-add { margin-top: 14px; }
+.s-ai-models .s-btn { margin-top: 8px; }
 .s-ai-provider-fields {
   display: flex;
   gap: 10px;
-  margin-top: 10px;
+  margin-top: 12px;
 }
 .s-ai-field {
   display: flex;
@@ -2843,7 +2859,7 @@ button { font-family: inherit; }
 .s-ai-field .s-text-input { width: 100%; }
 .s-ai-models {
   margin-top: 12px;
-  padding-top: 10px;
+  padding-top: 12px;
   border-top: 1px solid var(--hair);
 }
 .s-ai-models-title {

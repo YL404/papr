@@ -1811,7 +1811,15 @@ function AiProviderCard({
             <span className="s-ai-folded-name">
               {provider.name || kindLabel(provider.kind)}
             </span>
-            <span className="s-ai-folded-kind">{kindLabel(provider.kind)}</span>
+            {/* The kind is only worth printing when the name doesn't already
+                say it; otherwise the line carries the model count. */}
+            <span className="s-ai-folded-kind">
+              {provider.name && provider.name !== kindLabel(provider.kind)
+                ? kindLabel(provider.kind)
+                : t("settings.ai.modelCount", {
+                    count: provider.models.filter((m) => m.trim() !== "").length,
+                  })}
+            </span>
           </button>
         ) : (
           <>
@@ -2144,7 +2152,7 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
       {profiles && profiles.providers.length === 0 ? (
         <>
           <div className="s-ai-empty">{t("settings.ai.noProviders")}</div>
-          <button className="s-btn" onClick={addProvider}>
+          <button className="s-btn s-ai-add" onClick={addProvider}>
             <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
           </button>
         </>
@@ -2196,7 +2204,7 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
                     onActivate={(m) => activate(p.id, m)}
                   />
                 ))}
-                <button className="s-btn" onClick={addProvider}>
+                <button className="s-btn s-ai-add" onClick={addProvider}>
                   <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
                 </button>
               </div>

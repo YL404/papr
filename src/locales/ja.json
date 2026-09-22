@@ -388,6 +388,7 @@
       "aiBaseUrl": "\u30d9\u30fc\u30b9 URL",
       "aiBaseUrlDesc": "API \u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8\u306e\u30eb\u30fc\u30c8\u3002\u7a7a\u6b04\u3067\u516c\u5f0f\u30a8\u30f3\u30c9\u30dd\u30a4\u30f3\u30c8\u3092\u4f7f\u7528\u3002\u4e92\u63db\u30d7\u30ed\u30d0\u30a4\u30c0\u30fc\uff08OpenRouter\u3001Groq\u3001DeepSeek\u3001\u30ed\u30fc\u30ab\u30eb\u30b5\u30fc\u30d0\u30fc\u306a\u3069\uff09\u3082\u6307\u5b9a\u3067\u304d\u307e\u3059",
       "models": "モデル",
+      "modelCount": "{{count}} 件のモデル",
       "modelName": "モデル名",
       "addModel": "モデルを追加",
       "activeModel": "このモデルを使う",

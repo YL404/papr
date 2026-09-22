@@ -388,6 +388,7 @@
       "aiBaseUrl": "Base URL",
       "aiBaseUrlDesc": "API endpoint root. Leave blank for the provider's official endpoint, or point to any compatible provider (OpenRouter, Groq, DeepSeek, a local server)",
       "models": "Models",
+      "modelCount": "{{count}} models",
       "modelName": "Model name",
       "addModel": "Add model",
       "activeModel": "Use this model",
