@@ -374,7 +374,7 @@
       "dndNightDesc": "22:00 \u2014 08:00 \u4e4b\u95f4\u4e0d\u663e\u793a\u901a\u77e5"
     },
     "ai": {
-      "aiSummary": "AI \u6458\u8981",
+      "model": "模型",
       "providers": "服务提供方",
       "manage": "管理服务提供方",
       "expand": "展开",

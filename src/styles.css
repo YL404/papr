@@ -2724,28 +2724,34 @@ button { font-family: inherit; }
 }
 .s-textarea:focus { border-color: var(--accent); }
 
-/* Settings → AI: provider manager. Each provider is a card holding its
-   credentials plus the models offered under it; the checked radio is the
-   provider+model summaries and LLM translation use. Folded, a card is a
-   single header line — the default for every provider not in use. */
-.s-ai-active {
+/* Settings → AI: the model manager. One bordered region holds the summary
+   row (its header) and everything expanding from it, so the nested levels
+   read as a single settings block. Providers inside are separated by
+   hairlines rather than boxed again; a provider not in use folds to one
+   header line, and the checked radio marks the model in use. */
+.s-ai-region {
+  border: 1px solid var(--hair);
+  border-radius: 10px;
+  background: var(--panel);
+  overflow: hidden;
+}
+.s-ai-region-head {
   display: flex;
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 9px 12px;
-  background: var(--panel);
-  border: 1px solid var(--hair);
-  border-radius: 8px;
+  padding: 10px 12px;
+  background: none;
+  border: 0;
   cursor: pointer;
   font-family: inherit;
   font-size: 13px;
   color: var(--ink);
   text-align: left;
 }
-.s-ai-active:hover { border-color: var(--hair-strong); background: var(--hover); }
-.s-ai-active-name { font-weight: 500; white-space: nowrap; }
-.s-ai-active-model {
+.s-ai-region-head:hover { background: var(--hover); }
+.s-ai-region-name { font-weight: 500; white-space: nowrap; }
+.s-ai-region-model {
   flex: 1;
   min-width: 0;
   color: var(--muted);
@@ -2755,15 +2761,20 @@ button { font-family: inherit; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.s-ai-active > svg:last-child { flex-shrink: 0; margin-left: auto; }
-.s-ai-provider {
-  border: 1px solid var(--hair);
-  border-radius: 10px;
-  background: var(--panel);
-  padding: 14px 16px;
-  margin-bottom: 12px;
+.s-ai-region-head > svg:last-child { flex-shrink: 0; }
+.s-ai-region-body {
+  padding: 12px;
+  border-top: 1px solid var(--hair);
 }
-.s-ai-provider.active { border-color: var(--accent); }
+.s-ai-provider + .s-ai-provider {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--hair);
+}
+/* The provider in use is named in the accent colour — the region header
+   above and the checked radio below say the same thing. */
+.s-ai-provider.active .s-ai-name,
+.s-ai-provider.active .s-ai-folded-name { color: var(--accent-ink); }
 .s-ai-provider-head {
   display: flex;
   align-items: center;
@@ -2798,7 +2809,11 @@ button { font-family: inherit; }
   gap: 8px;
   flex: 1;
   min-width: 0;
-  padding: 0;
+  /* The inset padding (cancelled by the negative margin) gives the hover
+     state a background without shifting the text out of line. */
+  padding: 4px 6px;
+  margin: 0 -6px;
+  border-radius: 6px;
   background: none;
   border: 0;
   cursor: pointer;
@@ -2807,6 +2822,7 @@ button { font-family: inherit; }
   color: var(--ink);
   text-align: left;
 }
+.s-ai-folded:hover { background: var(--hover); }
 .s-ai-folded-name { font-weight: 500; white-space: nowrap; }
 .s-ai-folded-kind { color: var(--muted); font-size: 12px; white-space: nowrap; }
 .s-ai-folded > svg { flex-shrink: 0; }

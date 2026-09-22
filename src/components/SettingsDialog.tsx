@@ -2140,7 +2140,7 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
 
   return (
     <div className="settings-group">
-      <h3 className="settings-group-title">{t("settings.ai.aiSummary")}</h3>
+      <h3 className="settings-group-title">{t("settings.ai.model")}</h3>
       {profiles && profiles.providers.length === 0 ? (
         <>
           <div className="s-ai-empty">{t("settings.ai.noProviders")}</div>
@@ -2149,54 +2149,60 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
           </button>
         </>
       ) : (
+        profiles &&
         activeProvider && (
-          <button
-            className="s-ai-active"
-            onClick={() => setOpen((o) => !o)}
-            aria-expanded={open}
-            title={t("settings.ai.manage")}
-          >
-            <Icon name="sparkle-fill" size={13} color="var(--accent)" />
-            <span className="s-ai-active-name">
-              {activeProvider.name || kindLabel(activeProvider.kind)}
-            </span>
-            <span className="s-ai-active-model">
-              {effectiveModel(activeProvider, profiles?.activeModel ?? "")}
-            </span>
-            <Icon
-              name={open ? "chevron-down" : "chevron-right"}
-              size={13}
-              color="var(--muted)"
-            />
-          </button>
+          // One container for the whole manager: the summary row is its
+          // header, everything it expands into sits inside the same box, so
+          // the nested levels read as one settings region.
+          <div className="s-ai-region">
+            <button
+              className="s-ai-region-head"
+              onClick={() => setOpen((o) => !o)}
+              aria-expanded={open}
+              title={t("settings.ai.manage")}
+            >
+              <Icon name="sparkle-fill" size={13} color="var(--accent)" />
+              <span className="s-ai-region-name">
+                {activeProvider.name || kindLabel(activeProvider.kind)}
+              </span>
+              <span className="s-ai-region-model">
+                {effectiveModel(activeProvider, profiles.activeModel)}
+              </span>
+              <Icon
+                name={open ? "chevron-down" : "chevron-right"}
+                size={13}
+                color="var(--muted)"
+              />
+            </button>
+            {open && (
+              <div className="s-ai-region-body">
+                <p className="settings-group-desc" style={{ margin: "0 0 12px" }}>
+                  {t("settings.ai.providersDesc")}
+                </p>
+                {profiles.providers.map((p) => (
+                  <AiProviderCard
+                    key={p.id}
+                    provider={p}
+                    active={p.id === profiles.activeProviderId}
+                    activeModel={p.id === profiles.activeProviderId ? profiles.activeModel : ""}
+                    collapsed={folded.includes(p.id)}
+                    onToggle={() => toggleFolded(p.id)}
+                    onPatch={(patch, commit) => patchProvider(p.id, patch, commit)}
+                    onRemove={() => removeProvider(p.id)}
+                    onAddModel={() => addModel(p.id)}
+                    onPatchModel={(i, v, commit) => patchModel(p.id, i, v, commit)}
+                    onCommitModel={(i) => commitModel(p.id, i)}
+                    onRemoveModel={(i) => removeModel(p.id, i)}
+                    onActivate={(m) => activate(p.id, m)}
+                  />
+                ))}
+                <button className="s-btn" onClick={addProvider}>
+                  <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
+                </button>
+              </div>
+            )}
+          </div>
         )
-      )}
-      {open && profiles && profiles.providers.length > 0 && (
-        <>
-          <p className="settings-group-desc" style={{ margin: "12px 0 14px" }}>
-            {t("settings.ai.providersDesc")}
-          </p>
-          {profiles.providers.map((p) => (
-            <AiProviderCard
-              key={p.id}
-              provider={p}
-              active={p.id === profiles.activeProviderId}
-              activeModel={p.id === profiles.activeProviderId ? profiles.activeModel : ""}
-              collapsed={folded.includes(p.id)}
-              onToggle={() => toggleFolded(p.id)}
-              onPatch={(patch, commit) => patchProvider(p.id, patch, commit)}
-              onRemove={() => removeProvider(p.id)}
-              onAddModel={() => addModel(p.id)}
-              onPatchModel={(i, v, commit) => patchModel(p.id, i, v, commit)}
-              onCommitModel={(i) => commitModel(p.id, i)}
-              onRemoveModel={(i) => removeModel(p.id, i)}
-              onActivate={(m) => activate(p.id, m)}
-            />
-          ))}
-          <button className="s-btn" onClick={addProvider}>
-            <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
-          </button>
-        </>
       )}
       <SummaryPromptEditor onToast={onToast} />
       <Row

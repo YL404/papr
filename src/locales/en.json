@@ -374,7 +374,7 @@
       "dndNightDesc": "Don't show notifications between 22:00 and 08:00"
     },
     "ai": {
-      "aiSummary": "AI summary",
+      "model": "Model",
       "providers": "Providers",
       "manage": "Manage providers",
       "expand": "Expand",
