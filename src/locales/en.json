@@ -376,6 +376,9 @@
     "ai": {
       "aiSummary": "AI summary",
       "providers": "Providers",
+      "manage": "Manage providers",
+      "expand": "Expand",
+      "collapse": "Collapse",
       "providersDesc": "Each provider holds its own API key, endpoint and models. The selected model is the one used for article summaries and LLM translation.",
       "addProvider": "Add provider",
       "providerName": "Provider name",

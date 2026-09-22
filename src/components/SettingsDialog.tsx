@@ -1693,6 +1693,18 @@ const DEFAULT_BASE_URL: Record<AiProviderKind, string> = {
   deepseek: "https://api.deepseek.com",
 };
 
+/** The model the backend will actually call for a provider: the selected
+ *  one, else the provider's first, else the kind's default. Mirrors
+ *  `AiProfiles::active` so the one-line summary never names a model that
+ *  isn't the one in use. */
+function effectiveModel(provider: AiProviderEntry, selected: string): string {
+  return (
+    provider.models.find((m) => m.trim() !== "" && m === selected)?.trim() ||
+    provider.models.find((m) => m.trim() !== "")?.trim() ||
+    DEFAULT_MODEL[provider.kind]
+  );
+}
+
 /** Parse the persisted `ai_providers` JSON, returning `null` for anything
  *  unusable (absent, corrupt, or not the shape this build writes) so the
  *  caller falls back to the legacy flat keys. */
@@ -1755,11 +1767,14 @@ function migrateLegacyProfiles(
 /** One provider card: its credentials plus the models offered under it. The
  *  checked radio is the model summaries and LLM translation currently use.
  *  Text fields persist the whole `ai_providers` JSON on blur; the kind
- *  select and the radios persist immediately. */
+ *  select and the radios persist immediately. Folded, a card is a single
+ *  header line — the default for every provider not in use. */
 function AiProviderCard({
   provider,
   active,
   activeModel,
+  collapsed,
+  onToggle,
   onPatch,
   onRemove,
   onAddModel,
@@ -1771,6 +1786,8 @@ function AiProviderCard({
   provider: AiProviderEntry;
   active: boolean;
   activeModel: string;
+  collapsed: boolean;
+  onToggle: () => void;
   onPatch: (patch: Partial<AiProviderEntry>, commit: boolean) => void;
   onRemove: () => void;
   onAddModel: () => void;
@@ -1783,23 +1800,48 @@ function AiProviderCard({
   return (
     <div className={`s-ai-provider${active ? " active" : ""}`}>
       <div className="s-ai-provider-head">
-        <input
-          className="s-text-input s-ai-name"
-          value={provider.name}
-          placeholder={kindLabel(provider.kind)}
-          aria-label={t("settings.ai.providerName")}
-          {...NO_AUTOCORRECT}
-          onChange={(e) => onPatch({ name: e.target.value }, false)}
-          onBlur={() =>
-            onPatch({ name: provider.name.trim() || kindLabel(provider.kind) }, true)
-          }
-        />
-        <Select
-          value={provider.kind}
-          options={AI_KINDS}
-          onChange={(v) => onPatch({ kind: v }, true)}
-          aria-label={t("settings.ai.providerKind")}
-        />
+        {collapsed ? (
+          <button
+            className="s-ai-folded"
+            onClick={onToggle}
+            aria-expanded={false}
+            title={t("settings.ai.expand")}
+          >
+            <Icon name="chevron-right" size={13} color="var(--muted)" />
+            <span className="s-ai-folded-name">
+              {provider.name || kindLabel(provider.kind)}
+            </span>
+            <span className="s-ai-folded-kind">{kindLabel(provider.kind)}</span>
+          </button>
+        ) : (
+          <>
+            <button
+              className="icon-btn"
+              onClick={onToggle}
+              aria-expanded={true}
+              title={t("settings.ai.collapse")}
+            >
+              <Icon name="chevron-down" size={13} />
+            </button>
+            <input
+              className="s-text-input s-ai-name"
+              value={provider.name}
+              placeholder={kindLabel(provider.kind)}
+              aria-label={t("settings.ai.providerName")}
+              {...NO_AUTOCORRECT}
+              onChange={(e) => onPatch({ name: e.target.value }, false)}
+              onBlur={() =>
+                onPatch({ name: provider.name.trim() || kindLabel(provider.kind) }, true)
+              }
+            />
+            <Select
+              value={provider.kind}
+              options={AI_KINDS}
+              onChange={(v) => onPatch({ kind: v }, true)}
+              aria-label={t("settings.ai.providerKind")}
+            />
+          </>
+        )}
         <button
           className="icon-btn"
           title={t("settings.ai.removeProvider")}
@@ -1808,72 +1850,76 @@ function AiProviderCard({
           <Icon name="trash" size={13} />
         </button>
       </div>
-      <div className="s-ai-provider-fields">
-        <label className="s-ai-field">
-          <span>{t("settings.ai.aiApiKey")}</span>
-          <input
-            className="s-text-input"
-            type="password"
-            value={provider.apiKey}
-            placeholder="sk-…"
-            title={t("settings.ai.aiApiKeyDesc")}
-            {...NO_AUTOCORRECT}
-            onChange={(e) => onPatch({ apiKey: e.target.value }, false)}
-            // Trim before persisting — a pasted key routinely carries a
-            // trailing newline / space that would break the auth header.
-            onBlur={() => onPatch({ apiKey: provider.apiKey.trim() }, true)}
-          />
-        </label>
-        <label className="s-ai-field">
-          <span>{t("settings.ai.aiBaseUrl")}</span>
-          <input
-            className="s-text-input"
-            type="text"
-            value={provider.baseUrl}
-            placeholder={DEFAULT_BASE_URL[provider.kind]}
-            title={t("settings.ai.aiBaseUrlDesc")}
-            {...NO_AUTOCORRECT}
-            onChange={(e) => onPatch({ baseUrl: e.target.value }, false)}
-            onBlur={() => onPatch({ baseUrl: provider.baseUrl.trim() }, true)}
-          />
-        </label>
-      </div>
-      <div className="s-ai-models">
-        <div className="s-ai-models-title">{t("settings.ai.models")}</div>
-        {provider.models.map((m, i) => (
-          <div className="s-ai-model" key={i}>
-            <input
-              type="radio"
-              name="ai-active-model"
-              className="s-ai-model-radio"
-              checked={active && m.trim() !== "" && m === activeModel}
-              onChange={() => onActivate(m)}
-              aria-label={t("settings.ai.activeModel")}
-            />
-            <input
-              className="s-text-input s-ai-model-name"
-              value={m}
-              placeholder={DEFAULT_MODEL[provider.kind]}
-              aria-label={t("settings.ai.modelName")}
-              {...NO_AUTOCORRECT}
-              onChange={(e) => onPatchModel(i, e.target.value, false)}
-              // Trim before persisting — a stray space / newline yields a
-              // "model not found" from the provider.
-              onBlur={() => onCommitModel(i)}
-            />
-            <button
-              className="icon-btn"
-              title={t("settings.ai.removeModel")}
-              onClick={() => onRemoveModel(i)}
-            >
-              <Icon name="trash" size={13} />
+      {!collapsed && (
+        <>
+          <div className="s-ai-provider-fields">
+            <label className="s-ai-field">
+              <span>{t("settings.ai.aiApiKey")}</span>
+              <input
+                className="s-text-input"
+                type="password"
+                value={provider.apiKey}
+                placeholder="sk-…"
+                title={t("settings.ai.aiApiKeyDesc")}
+                {...NO_AUTOCORRECT}
+                onChange={(e) => onPatch({ apiKey: e.target.value }, false)}
+                // Trim before persisting — a pasted key routinely carries a
+                // trailing newline / space that would break the auth header.
+                onBlur={() => onPatch({ apiKey: provider.apiKey.trim() }, true)}
+              />
+            </label>
+            <label className="s-ai-field">
+              <span>{t("settings.ai.aiBaseUrl")}</span>
+              <input
+                className="s-text-input"
+                type="text"
+                value={provider.baseUrl}
+                placeholder={DEFAULT_BASE_URL[provider.kind]}
+                title={t("settings.ai.aiBaseUrlDesc")}
+                {...NO_AUTOCORRECT}
+                onChange={(e) => onPatch({ baseUrl: e.target.value }, false)}
+                onBlur={() => onPatch({ baseUrl: provider.baseUrl.trim() }, true)}
+              />
+            </label>
+          </div>
+          <div className="s-ai-models">
+            <div className="s-ai-models-title">{t("settings.ai.models")}</div>
+            {provider.models.map((m, i) => (
+              <div className="s-ai-model" key={i}>
+                <input
+                  type="radio"
+                  name="ai-active-model"
+                  className="s-ai-model-radio"
+                  checked={active && m.trim() !== "" && m === activeModel}
+                  onChange={() => onActivate(m)}
+                  aria-label={t("settings.ai.activeModel")}
+                />
+                <input
+                  className="s-text-input s-ai-model-name"
+                  value={m}
+                  placeholder={DEFAULT_MODEL[provider.kind]}
+                  aria-label={t("settings.ai.modelName")}
+                  {...NO_AUTOCORRECT}
+                  onChange={(e) => onPatchModel(i, e.target.value, false)}
+                  // Trim before persisting — a stray space / newline yields a
+                  // "model not found" from the provider.
+                  onBlur={() => onCommitModel(i)}
+                />
+                <button
+                  className="icon-btn"
+                  title={t("settings.ai.removeModel")}
+                  onClick={() => onRemoveModel(i)}
+                >
+                  <Icon name="trash" size={13} />
+                </button>
+              </div>
+            ))}
+            <button className="s-btn" onClick={onAddModel}>
+              <Icon name="plus" size={12} /> {t("settings.ai.addModel")}
             </button>
           </div>
-        ))}
-        <button className="s-btn" onClick={onAddModel}>
-          <Icon name="plus" size={12} /> {t("settings.ai.addModel")}
-        </button>
-      </div>
+        </>
+      )}
     </div>
   );
 }
@@ -1886,10 +1932,23 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
   const [profiles, setProfiles] = useState<AiProfiles | null>(null);
+  // The manager stays folded to its one-line "model in use" summary until
+  // asked for; folded provider ids are the ones not in use.
+  const [open, setOpen] = useState(false);
+  const [folded, setFolded] = useState<string[]>([]);
   // Default engine + target language for translation. Empty lang = follow the UI
   // language until the user picks one.
   const [engine, setEngine] = useState<TranslateEngine>("llm");
   const [translateLang, setTranslateLang] = useState("");
+
+  /** Adopt a freshly loaded config: everything but the provider in use
+   *  starts folded, so the section opens on one quiet line. */
+  const apply = (next: AiProfiles) => {
+    setProfiles(next);
+    setFolded(next.providers.filter((p) => p.id !== next.activeProviderId).map((p) => p.id));
+  };
+  const toggleFolded = (id: string) =>
+    setFolded((f) => (f.includes(id) ? f.filter((x) => x !== id) : [...f, id]));
 
   const persist = (next: AiProfiles) => {
     setProfiles(next);
@@ -1920,11 +1979,13 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
       .then(([stored, p, k, m, b, eng, tl]) => {
         const parsed = parseAiProfiles(stored);
         if (parsed) {
-          setProfiles(parsed);
+          apply(parsed);
         } else {
           // First visit since the multi-provider layout: carry the single
           // provider over and persist it, retiring the flat keys.
-          void persist(migrateLegacyProfiles(p, k, m, b));
+          const migrated = migrateLegacyProfiles(p, k, m, b);
+          apply(migrated);
+          void persist(migrated);
         }
         if (eng === "google" || eng === "deepl" || eng === "bing" || eng === "llm")
           setEngine(eng);
@@ -1950,26 +2011,19 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
   const addProvider = () => {
     if (!profiles) return;
     // A new provider starts as a second credential set for the kind already
-    // in use — the common case is another key for the same API family.
+    // in use — the common case is another key for the same API family. It
+    // opens unfolded so the key and models can be filled in straight away.
     const kind =
       profiles.providers.find((p) => p.id === profiles.activeProviderId)?.kind ?? "anthropic";
     const base = kindLabel(kind);
     const taken = new Set(profiles.providers.map((p) => p.name));
     let name = base;
     for (let n = 2; taken.has(name); n += 1) name = `${base} ${n}`;
+    const id = `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    setOpen(true);
     void persist({
       ...profiles,
-      providers: [
-        ...profiles.providers,
-        {
-          id: `p-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-          name,
-          kind,
-          apiKey: "",
-          baseUrl: "",
-          models: [],
-        },
-      ],
+      providers: [...profiles.providers, { id, name, kind, apiKey: "", baseUrl: "", models: [] }],
     });
     onToast(t("settings.ai.providerAdded"));
   };
@@ -1978,16 +2032,24 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
     if (!profiles) return;
     const removed = profiles.providers.find((p) => p.id === id);
     const providers = profiles.providers.filter((p) => p.id !== id);
+    const fallback = providers[0];
     // Removing the provider in use re-points the selection at the first
     // remaining one, so summaries keep working without another visit here.
     const next: AiProfiles =
       profiles.activeProviderId === id
         ? {
-            activeProviderId: providers[0]?.id ?? "",
-            activeModel: providers[0]?.models.find((m) => m.trim() !== "") ?? "",
+            activeProviderId: fallback?.id ?? "",
+            activeModel: fallback?.models.find((m) => m.trim() !== "") ?? "",
             providers,
           }
         : { ...profiles, providers };
+    // The deleted card leaves the fold state, and a provider the selection
+    // just moved to opens so its radio is visible.
+    setFolded((f) =>
+      profiles.activeProviderId === id
+        ? f.filter((x) => x !== id && x !== fallback?.id)
+        : f.filter((x) => x !== id),
+    );
     void persist(next);
     if (removed)
       onToast(
@@ -2064,23 +2126,64 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
     const name = model.trim();
     if (!name) return;
     void persist({ ...profiles, activeProviderId: providerId, activeModel: name });
+    // The provider just picked has to show its radio, so it unfolds.
+    setFolded((f) => f.filter((x) => x !== providerId));
     onToast(t("settings.ai.modelActivated", { model: name }));
   };
+
+  // The provider the backend resolves to: the selected one, or the first
+  // when the selection points at a removed provider — the same fallback
+  // order as `AiProfiles::active`.
+  const activeProvider =
+    profiles?.providers.find((p) => p.id === profiles.activeProviderId) ??
+    profiles?.providers[0];
 
   return (
     <div className="settings-group">
       <h3 className="settings-group-title">{t("settings.ai.aiSummary")}</h3>
-      <p className="settings-group-desc" style={{ marginBottom: 14 }}>
-        {t("settings.ai.providersDesc")}
-      </p>
-      {profiles && (
+      {profiles && profiles.providers.length === 0 ? (
         <>
+          <div className="s-ai-empty">{t("settings.ai.noProviders")}</div>
+          <button className="s-btn" onClick={addProvider}>
+            <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
+          </button>
+        </>
+      ) : (
+        activeProvider && (
+          <button
+            className="s-ai-active"
+            onClick={() => setOpen((o) => !o)}
+            aria-expanded={open}
+            title={t("settings.ai.manage")}
+          >
+            <Icon name="sparkle-fill" size={13} color="var(--accent)" />
+            <span className="s-ai-active-name">
+              {activeProvider.name || kindLabel(activeProvider.kind)}
+            </span>
+            <span className="s-ai-active-model">
+              {effectiveModel(activeProvider, profiles?.activeModel ?? "")}
+            </span>
+            <Icon
+              name={open ? "chevron-down" : "chevron-right"}
+              size={13}
+              color="var(--muted)"
+            />
+          </button>
+        )
+      )}
+      {open && profiles && profiles.providers.length > 0 && (
+        <>
+          <p className="settings-group-desc" style={{ margin: "12px 0 14px" }}>
+            {t("settings.ai.providersDesc")}
+          </p>
           {profiles.providers.map((p) => (
             <AiProviderCard
               key={p.id}
               provider={p}
               active={p.id === profiles.activeProviderId}
               activeModel={p.id === profiles.activeProviderId ? profiles.activeModel : ""}
+              collapsed={folded.includes(p.id)}
+              onToggle={() => toggleFolded(p.id)}
               onPatch={(patch, commit) => patchProvider(p.id, patch, commit)}
               onRemove={() => removeProvider(p.id)}
               onAddModel={() => addModel(p.id)}
@@ -2090,9 +2193,6 @@ function AiSettingsGroup({ onToast }: { onToast: (m: string) => void }) {
               onActivate={(m) => activate(p.id, m)}
             />
           ))}
-          {profiles.providers.length === 0 && (
-            <div className="s-ai-empty">{t("settings.ai.noProviders")}</div>
-          )}
           <button className="s-btn" onClick={addProvider}>
             <Icon name="plus" size={12} /> {t("settings.ai.addProvider")}
           </button>

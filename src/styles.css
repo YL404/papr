@@ -2726,7 +2726,36 @@ button { font-family: inherit; }
 
 /* Settings → AI: provider manager. Each provider is a card holding its
    credentials plus the models offered under it; the checked radio is the
-   provider+model summaries and LLM translation use. */
+   provider+model summaries and LLM translation use. Folded, a card is a
+   single header line — the default for every provider not in use. */
+.s-ai-active {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 9px 12px;
+  background: var(--panel);
+  border: 1px solid var(--hair);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+}
+.s-ai-active:hover { border-color: var(--hair-strong); background: var(--hover); }
+.s-ai-active-name { font-weight: 500; white-space: nowrap; }
+.s-ai-active-model {
+  flex: 1;
+  min-width: 0;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.s-ai-active > svg:last-child { flex-shrink: 0; margin-left: auto; }
 .s-ai-provider {
   border: 1px solid var(--hair);
   border-radius: 10px;
@@ -2762,6 +2791,25 @@ button { font-family: inherit; }
   flex-shrink: 0;
 }
 .s-ai-provider .icon-btn:hover { background: var(--hover); color: var(--danger); }
+/* A folded provider: one line — name, kind, remove — that reopens on click. */
+.s-ai-folded {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+}
+.s-ai-folded-name { font-weight: 500; white-space: nowrap; }
+.s-ai-folded-kind { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.s-ai-folded > svg { flex-shrink: 0; }
 .s-ai-provider-fields {
   display: flex;
   gap: 10px;

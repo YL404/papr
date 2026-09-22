@@ -376,6 +376,9 @@
     "ai": {
       "aiSummary": "AI \u8981\u7d04",
       "providers": "プロバイダー",
+      "manage": "プロバイダーを管理",
+      "expand": "展開",
+      "collapse": "折りたたむ",
       "providersDesc": "プロバイダーごとに API キー・エンドポイント・モデルを保存します。選択されたモデルが記事の要約と LLM 翻訳に使われます。",
       "addProvider": "プロバイダーを追加",
       "providerName": "プロバイダー名",

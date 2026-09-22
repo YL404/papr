@@ -376,6 +376,9 @@
     "ai": {
       "aiSummary": "AI \u6458\u8981",
       "providers": "服务提供方",
+      "manage": "管理服务提供方",
+      "expand": "展开",
+      "collapse": "收起",
       "providersDesc": "每个提供方保存自己的 API 密钥、端点和模型。选中的模型用于文章摘要和 LLM 翻译。",
       "addProvider": "添加提供方",
       "providerName": "提供方名称",
