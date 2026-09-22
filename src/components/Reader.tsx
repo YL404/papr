@@ -9,6 +9,7 @@ import { usePlayer } from "../player";
 import { useTranslationJobs } from "../translation";
 import { useArticleActions } from "../hooks/articleActions";
 import { renderMarkdown } from "../lib/markdown";
+import { summaryTooShort } from "../lib/summaryGate";
 import { downloadBlob, imageFilename } from "../lib/download";
 import { imageDataUrl, needsImageProxy } from "../lib/imageBytes";
 import { fullDate } from "../lib/feedMeta";
@@ -1260,24 +1261,18 @@ export default function Reader({ onToast }: Props) {
   );
 }
 
-/** A body shorter than this gains nothing from a model summary — a one-line
- *  link post has no substance to condense. */
-const SUMMARY_MIN_CHARS = 100;
-
-/** Gate on article length: too short, and no section renders at all — so the
- *  model call it invites never happens. A wrapper rather than an early return
- *  inside the section: the section's hooks must run unconditionally, and its
- *  body can still arrive after mount (extracted content is fetched lazily),
- *  which would otherwise change the hook count between renders of one
- *  instance. */
+/** Gate on article length/language: too short (or too thinly Chinese), and no
+ *  section renders at all — so the model call it invites never happens. A
+ *  wrapper rather than an early return inside the section: the section's hooks
+ *  must run unconditionally, and its body can still arrive after mount
+ *  (extracted content is fetched lazily), which would otherwise change the
+ *  hook count between renders of one instance. Rule lives in
+ *  `summaryTooShort` (src/lib/summaryGate.ts) so it's unit-testable. */
 function AISummary({ article }: { article: ArticleDetail }) {
   const body = article.extractedHtml || article.contentHtml || "";
   // Memoised on the body — this re-runs whenever the reader re-renders (a
   // toolbar toggle, a store update), and parsing the HTML each time is waste.
-  const tooShort = useMemo(
-    () => bodyPlainText(body).trim().length < SUMMARY_MIN_CHARS,
-    [body],
-  );
+  const tooShort = useMemo(() => summaryTooShort(bodyPlainText(body)), [body]);
   if (tooShort) return null;
   return <AISummarySection article={article} />;
 }
