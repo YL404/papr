@@ -27,7 +27,7 @@ Run it with no arguments to see live state and the next useful commands:
 $ papr
 bin: ~/.local/bin/papr
 description: Read, search and triage your Papr RSS feeds from the shell.
-db: ~/Library/Application Support/com.thomas.papr/papr.db
+db: ~/Library/Application Support/com.yl404.papr/papr.db
 unread: 206
 starred: 17
 later: 0

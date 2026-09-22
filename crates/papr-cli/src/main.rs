@@ -19,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use toon::Doc;
 
-const APP_IDENTIFIER: &str = "com.thomas.papr";
+const APP_IDENTIFIER: &str = "com.yl404.papr";
 const DESCRIPTION: &str = "Read, search and triage your Papr RSS feeds from the shell.";
 const USER_AGENT: &str = concat!("papr-cli/", env!("CARGO_PKG_VERSION"));
 
