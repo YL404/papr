@@ -2696,17 +2696,53 @@ button { font-family: inherit; }
   justify-content: flex-end;
   margin-top: 10px;
 }
-/* Preset picker row, sitting above the prompt field. */
-.settings-prompt-controls {
+/* Preset picker — the summary-prompt chooser. Each option is a pill; the
+   hovered one's prompt opens in a panel below the row (pointer events stay
+   on the pills, so moving between them keeps switching the preview). */
+.s-preset-picker {
+  position: relative;
   display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 6px;
 }
-.settings-prompt-hint {
+.s-preset {
+  padding: 5px 12px;
+  border: 1px solid var(--hair-strong);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--ink-2);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.s-preset:hover { border-color: var(--ink-2); background: var(--hover); }
+.s-preset.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-ink);
+}
+.s-preset-peek {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 10;
+  width: min(440px, 100%);
+  max-height: 240px;
+  overflow-y: auto;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--hair-strong);
+  border-radius: 8px;
+  box-shadow: var(--shadow-raise);
+}
+.s-preset-peek-text {
+  margin: 0;
+  font-family: var(--mono);
   font-size: 11.5px;
-  color: var(--muted-2);
-  margin-top: 10px;
+  line-height: 1.55;
+  color: var(--ink-2);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 .s-textarea {
   font-family: var(--mono);
@@ -2780,6 +2816,14 @@ button { font-family: inherit; }
   align-items: center;
   gap: 8px;
 }
+/* A provider's own content nests one level under its header; the left rail
+   marks the step down (accent for the provider in use). */
+.s-ai-provider-body {
+  margin-top: 10px;
+  padding-left: 14px;
+  border-left: 2px solid var(--hair-strong);
+}
+.s-ai-provider.active .s-ai-provider-body { border-left-color: var(--accent); }
 .s-ai-provider-head .s-ai-name {
   flex: 1;
   min-width: 0;

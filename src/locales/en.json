@@ -410,13 +410,12 @@
       "translatePromptDesc": "The system prompt sent to the model when translating an article. {target} stands for the target language; changes apply to the next translation",
       "translatePromptReset": "Restore default",
       "summaryPrompt": "Summary prompt",
-      "summaryPromptDesc": "Pick a built-in template, or switch to Custom to write your own. {lang} stands for the response-language instruction; changes apply to the next summary",
+      "summaryPromptDesc": "Pick a built-in template — hover one to preview its prompt — or switch to Custom to write your own. {lang} stands for the response-language instruction; changes apply to the next summary",
       "summaryPromptReset": "Restore default",
       "presetGeneral": "General",
       "presetBrief": "Brief",
       "presetDeep": "In-depth",
-      "presetCustom": "Custom",
-      "presetReadOnly": "Built-in templates are read-only \u2014 switch to Custom to edit"
+      "presetCustom": "Custom"
     },
     "advanced": {
       "experimental": "Experimental features",

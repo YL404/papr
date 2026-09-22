@@ -529,10 +529,12 @@ const SUMMARY_PRESET_LABELS: Record<string, string> = {
   deep: "settings.ai.presetDeep",
 };
 
-/** The AI-summary prompt: a picker over the built-in presets (shown read-only)
- *  plus a Custom option whose text is editable. A custom template with nothing
- *  stored shows — and the backend applies — the "general" preset's text, so
- *  switching to Custom without editing behaves exactly like General. */
+/** The AI-summary prompt: a picker over the built-in presets plus a Custom
+ *  option. A preset's text stays out of the way until the option is hovered
+ *  (or keyboard-focused); choosing Custom brings up the editable field. A
+ *  custom template with nothing stored shows — and the backend applies —
+ *  the "general" preset's text, so switching to Custom without editing
+ *  behaves exactly like General. */
 function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
   const { t } = useTranslation();
   const [presets, setPresets] = useState<{ id: string; template: string }[]>(
@@ -540,6 +542,8 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
   );
   const [preset, setPreset] = useState(DEFAULT_SUMMARY_PRESET);
   const [custom, setCustom] = useState("");
+  // The preset whose prompt is being previewed (hover / keyboard focus).
+  const [peek, setPeek] = useState<string | null>(null);
   // The stored custom template ("" = unset), so a blur that changed nothing
   // writes nothing.
   const savedCustom = useRef("");
@@ -561,13 +565,6 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
 
   const general = presets.find((p) => p.id === DEFAULT_SUMMARY_PRESET)?.template ?? "";
   const isCustom = preset === "custom";
-  // What the field shows: the custom template when Custom is selected, else the
-  // selected preset's. A blank custom template shows General's text — the same
-  // fallback the backend applies.
-  const shown = isCustom
-    ? custom.trim() || general
-    : presets.find((p) => p.id === preset)?.template ?? general;
-
   // Text identical to the General preset is stored as "" (unset), which keeps
   // the seed tracking future preset changes and makes "restore default" just
   // "show General, then commit".
@@ -583,6 +580,16 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
       .catch((e) => reportError(e));
   };
 
+  const select = (id: string) => {
+    setPreset(id);
+    api.setSetting("summary_preset", id).catch((e) => reportError(e));
+  };
+
+  // Previewing while Custom is selected would swap the field being edited
+  // out from under the user, so the peek stays off in that mode.
+  const peeked =
+    !isCustom && peek ? presets.find((p) => p.id === peek) : undefined;
+
   return (
     <div className="settings-prompt">
       <div className="settings-row-text">
@@ -591,49 +598,65 @@ function SummaryPromptEditor({ onToast }: { onToast: (m: string) => void }) {
           {t("settings.ai.summaryPromptDesc")}
         </div>
       </div>
-      <div className="settings-prompt-controls">
-        <Select
-          value={preset}
-          options={[
-            ...presets.map((p) => ({
-              value: p.id,
-              label: t(SUMMARY_PRESET_LABELS[p.id] ?? p.id),
-            })),
-            { value: "custom", label: t("settings.ai.presetCustom") },
-          ]}
-          aria-label={t("settings.ai.summaryPrompt")}
-          onChange={(id) => {
-            setPreset(id);
-            api.setSetting("summary_preset", id).catch((e) => reportError(e));
-          }}
-        />
-        {isCustom && (
+      <div
+        className="s-preset-picker"
+        role="radiogroup"
+        aria-label={t("settings.ai.summaryPrompt")}
+        onMouseLeave={() => setPeek(null)}
+      >
+        {presets.map((p) => (
           <button
-            className="s-btn"
-            onClick={() => {
-              setCustom(general);
-              commit(general);
-            }}
-            disabled={custom.trim() === general.trim()}
+            key={p.id}
+            className={`s-preset${preset === p.id ? " active" : ""}`}
+            role="radio"
+            aria-checked={preset === p.id}
+            onClick={() => select(p.id)}
+            onMouseEnter={() => setPeek(p.id)}
+            onFocus={() => setPeek(p.id)}
+            onBlur={() => setPeek(null)}
           >
-            {t("settings.ai.summaryPromptReset")}
+            {t(SUMMARY_PRESET_LABELS[p.id] ?? p.id)}
           </button>
+        ))}
+        <button
+          className={`s-preset${isCustom ? " active" : ""}`}
+          role="radio"
+          aria-checked={isCustom}
+          onClick={() => select("custom")}
+          onMouseEnter={() => setPeek(null)}
+        >
+          {t("settings.ai.presetCustom")}
+        </button>
+        {peeked && (
+          <div className="s-preset-peek">
+            <pre className="s-preset-peek-text">{peeked.template}</pre>
+          </div>
         )}
       </div>
-      <textarea
-        className="s-textarea"
-        {...NO_AUTOCORRECT}
-        rows={9}
-        readOnly={!isCustom}
-        value={shown}
-        aria-label={t("settings.ai.summaryPrompt")}
-        onChange={(e) => setCustom(e.target.value)}
-        onBlur={() => isCustom && commit(custom)}
-      />
-      {!isCustom && (
-        <div className="settings-prompt-hint">
-          {t("settings.ai.presetReadOnly")}
-        </div>
+      {isCustom && (
+        <>
+          <textarea
+            className="s-textarea"
+            {...NO_AUTOCORRECT}
+            rows={9}
+            value={custom.trim() ? custom : general}
+            aria-label={t("settings.ai.summaryPrompt")}
+            onChange={(e) => setCustom(e.target.value)}
+            onBlur={() => commit(custom)}
+          />
+          <div className="settings-prompt-foot">
+            <button
+              className="s-btn"
+              onClick={() => {
+                setCustom(general);
+                commit(general);
+              }}
+              disabled={custom.trim() === general.trim()}
+            >
+              {t("settings.ai.summaryPromptReset")}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );
@@ -1859,7 +1882,9 @@ function AiProviderCard({
         </button>
       </div>
       {!collapsed && (
-        <>
+        // The provider's own content sits one level under its header, marked
+        // by the left rail.
+        <div className="s-ai-provider-body">
           <div className="s-ai-provider-fields">
             <label className="s-ai-field">
               <span>{t("settings.ai.aiApiKey")}</span>
@@ -1926,7 +1951,7 @@ function AiProviderCard({
               <Icon name="plus" size={12} /> {t("settings.ai.addModel")}
             </button>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
