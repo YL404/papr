@@ -239,6 +239,8 @@
       "markReadOnOpen": "Mark as read when opening an article",
       "markReadOnScroll": "Mark as read when scrolled to the bottom",
       "markReadOnScrollDesc": "Good for quickly skimming long lists",
+      "markReadOnListScroll": "Mark as read when scrolled out of the list",
+      "markReadOnListScrollDesc": "While browsing down the list, articles that leave the viewport are marked read after a short delay",
       "startup": "Startup",
       "launchAtLogin": "Launch at login",
       "launchAtLoginDesc": "Start Papr automatically in the background after login",

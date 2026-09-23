@@ -100,6 +100,18 @@ export function useArticleActions(onError?: (msg: string) => void) {
         onError?.(errorText(e));
       }
     },
+    /** Batch variant of `setRead(true)` — one refresh for a burst of rows
+     *  leaving the viewport instead of one per row. */
+    async setReadMany(ids: number[]) {
+      if (!ids.length) return;
+      try {
+        await Promise.all(ids.map((id) => api.markRead(id, true)));
+        for (const id of ids) patch(id, { isRead: true });
+        refreshLists();
+      } catch (e) {
+        onError?.(errorText(e));
+      }
+    },
     async setStarred(id: number, starred: boolean) {
       try {
         await api.markStarred(id, starred);

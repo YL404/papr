@@ -829,6 +829,15 @@ function GeneralSection() {
             onChange={(v) => setPref({ markReadOnScroll: v })}
           />
         </Row>
+        <Row
+          label={t("settings.general.markReadOnListScroll")}
+          desc={t("settings.general.markReadOnListScrollDesc")}
+        >
+          <Toggle
+            checked={prefs.markReadOnListScroll}
+            onChange={(v) => setPref({ markReadOnListScroll: v })}
+          />
+        </Row>
       </div>
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.general.startup")}</h3>

@@ -11,6 +11,11 @@ import { resolveRowTranslation } from "../lib/rowTranslation";
 import { relTime } from "../lib/feedMeta";
 import { isMac, modCombo } from "../lib/platform";
 import { imageDataUrl, needsImageProxy } from "../lib/imageBytes";
+import {
+  dueMarks,
+  LIST_MARK_DELAY_MS,
+  type PendingMark,
+} from "../lib/scrollRead";
 import { reportError, toast } from "../toast";
 import { clampToViewport } from "../lib/viewport";
 import type { ArticleSummary, Feed } from "../types";
@@ -45,6 +50,7 @@ export default function ArticleList({ onToast }: Props) {
   const showCardThumbs = useUi((s) => s.prefs.showCardThumbs);
   const selectedId = useUi((s) => s.selectedArticleId);
   const openArticle = useUi((s) => s.openArticle);
+  const markReadOnListScroll = useUi((s) => s.prefs.markReadOnListScroll);
 
   const translateSetting = useQuery({
     queryKey: ["setting", "translate_target_lang"],
@@ -108,6 +114,80 @@ export default function ArticleList({ onToast }: Props) {
   const baseOffset = (browse.data?.pageParams?.[0] as number | undefined) ?? listAnchor;
 
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Scroll-out mark-read state (Settings → "mark as read when scrolled out
+  // of the list"). `dirRef` tracks the *user's* intent (wheel/keys/scrollbar)
+  // rather than raw scrollTop deltas, so the list's own programmatic scrolls
+  // — reveal jumps and prepend compensation — can't mark rows the user never
+  // scrolled past. `prevVisibleRef` is the id set of the last observed
+  // viewport: an id in it that drops out while direction is "down" has been
+  // scrolled past; seeing it again cancels its pending mark.
+  const dirRef = useRef<0 | 1 | -1>(0);
+  const prevVisibleRef = useRef<Map<number, number>>(new Map());
+  const pendingRef = useRef<Map<number, PendingMark>>(new Map());
+  const flushTimerRef = useRef<number | undefined>(undefined);
+  const markSigRef = useRef("");
+  // Mirrors `reveal` for the scroll listener without re-attaching it.
+  const revealActiveRef = useRef(false);
+  // Wall-clock until which scroll-derived direction updates are ignored —
+  // set while the prepend compensation nudges scrollTop upward.
+  const programmaticScrollUntilRef = useRef(0);
+  const actionsRef = useRef(actions);
+  actionsRef.current = actions;
+
+  const dropAllPending = () => {
+    pendingRef.current.clear();
+    if (flushTimerRef.current != null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+  };
+
+  // One timer for the whole pending map: arm it to the earliest dueAt, flush
+  // everything due, re-arm for the rest. Batches a fast flick's exits into a
+  // single `setReadMany` instead of one IPC call per row.
+  const armFlush = () => {
+    if (flushTimerRef.current != null) {
+      window.clearTimeout(flushTimerRef.current);
+      flushTimerRef.current = undefined;
+    }
+    if (pendingRef.current.size === 0) return;
+    let earliest = Infinity;
+    for (const m of pendingRef.current.values()) {
+      if (m.dueAt < earliest) earliest = m.dueAt;
+    }
+    flushTimerRef.current = window.setTimeout(() => {
+      flushTimerRef.current = undefined;
+      const due = dueMarks(pendingRef.current, Date.now());
+      if (due.length) {
+        for (const m of due) pendingRef.current.delete(m.id);
+        actionsRef.current.setReadMany(due.map((m) => m.id));
+      }
+      armFlush();
+    }, Math.max(0, earliest - Date.now()) + 10);
+  };
+
+  // Scroll direction from real scroll events (wheel, scrollbar drag, keyboard
+  // paging all land here). Suppressed while a programmatic scroll owns the
+  // container: reveal jumps are covered by `revealActiveRef`, the prepend
+  // compensation nudge by the short `programmaticScrollUntilRef` window.
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    let last = el.scrollTop;
+    const onScroll = () => {
+      const top = el.scrollTop;
+      const delta = top - last;
+      last = top;
+      if (revealActiveRef.current) return;
+      if (performance.now() < programmaticScrollUntilRef.current) return;
+      if (delta > 0) dirRef.current = 1;
+      else if (delta < 0) dirRef.current = -1;
+    };
+    el.addEventListener("scroll", onScroll, { passive: true });
+    return () => el.removeEventListener("scroll", onScroll);
+  }, []);
+
+  useEffect(() => () => dropAllPending(), []);
   const rowEstimate =
     viewMode === "card"
       ? 320
@@ -173,7 +253,12 @@ export default function ArticleList({ onToast }: Props) {
     }
     if (baseOffset < prev) {
       const el = scrollRef.current;
-      if (el) el.scrollTop += (prev - baseOffset) * rowEstimate;
+      if (el) {
+        // The compensation scroll must not read as "user scrolled down" when
+        // the direction listener below observes the scrollTop jump.
+        programmaticScrollUntilRef.current = performance.now() + 150;
+        el.scrollTop += (prev - baseOffset) * rowEstimate;
+      }
     }
   }, [baseOffset, query, unreadOnly, sortOldest, listAnchor, rowEstimate]);
 
@@ -186,6 +271,7 @@ export default function ArticleList({ onToast }: Props) {
   // scrolls when the row isn't already fully visible, so *clicking* a visible
   // row never jolts the list — it just opens.
   const [reveal, setReveal] = useState<number | null>(null);
+  revealActiveRef.current = reveal != null;
   const totalSize = virt.getTotalSize();
   useEffect(() => {
     if (reveal == null) return;
@@ -284,6 +370,72 @@ export default function ArticleList({ onToast }: Props) {
     lookupRef.current = null;
     setLocate(null);
   }, [query, unreadOnly, sortOldest]);
+
+  // Scroll-out mark-read. Each pass diffs the *id → index* map of the exact
+  // viewport (`virt.range`, not the overscan-extended `getVirtualItems`)
+  // against the previous one: ids that vanished *through the top* while the
+  // last user scroll went down have been scrolled past and enter a delay
+  // before being marked read; ids that reappear cancel their pending mark.
+  // Baseline-only passes (reveal jumps, list switches, rows pushed out the
+  // bottom by a background insert) are not the user browsing and never
+  // schedule anything.
+  useEffect(() => {
+    const range = virt.range;
+    const sig = `${JSON.stringify(query)}|${unreadOnly}|${sortOldest}|${listAnchor}`;
+    const sigChanged = markSigRef.current !== sig;
+    if (sigChanged) markSigRef.current = sig;
+
+    if (!range || items.length === 0) {
+      prevVisibleRef.current = new Map();
+      if (!markReadOnListScroll) dropAllPending();
+      return;
+    }
+
+    const visible = new Map<number, number>();
+    for (let i = range.startIndex; i <= range.endIndex && i < items.length; i++) {
+      if (i >= 0) visible.set(items[i].id, i);
+    }
+
+    // Back in view within the delay window → the user is still looking at it.
+    for (const id of visible.keys()) pendingRef.current.delete(id);
+
+    if (!markReadOnListScroll) {
+      dropAllPending();
+      prevVisibleRef.current = visible;
+      return;
+    }
+
+    const baselineReset = sigChanged || revealActiveRef.current;
+    const prev = prevVisibleRef.current;
+    prevVisibleRef.current = visible;
+
+    if (baselineReset || dirRef.current !== 1) return;
+
+    const byId = new Map(items.map((a) => [a.id, a]));
+    let scheduled = false;
+    for (const [id, index] of prev) {
+      if (visible.has(id) || pendingRef.current.has(id)) continue;
+      // Left through the bottom (background insert pushed it out) — not
+      // scrolled past; only exits above the current top edge count.
+      if (index >= range.startIndex) continue;
+      const a = byId.get(id);
+      if (!a || a.isRead) continue;
+      pendingRef.current.set(id, { id, dueAt: Date.now() + LIST_MARK_DELAY_MS });
+      scheduled = true;
+    }
+    if (scheduled) armFlush();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    virt.range?.startIndex,
+    virt.range?.endIndex,
+    items,
+    markReadOnListScroll,
+    query,
+    unreadOnly,
+    sortOldest,
+    listAnchor,
+    reveal,
+  ]);
 
   useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
 

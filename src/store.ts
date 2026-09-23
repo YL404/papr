@@ -84,6 +84,10 @@ export interface Prefs {
   showReadingTime: boolean;
   markReadOnOpen: boolean;
   markReadOnScroll: boolean;
+  /** Article list: mark rows read after they scroll out of the viewport
+   *  during a downward browse (the reader's `markReadOnScroll` is the
+   *  scroll-to-foot behaviour and stays independent). */
+  markReadOnListScroll: boolean;
   defaultOpenMode: OpenMode;
   startupView: StartupView;
   hideReadOnStartup: boolean;
@@ -211,6 +215,7 @@ const PREF_KEYS: (keyof Prefs)[] = [
   "showReadingTime",
   "markReadOnOpen",
   "markReadOnScroll",
+  "markReadOnListScroll",
   "defaultOpenMode",
   "startupView",
   "hideReadOnStartup",
@@ -266,6 +271,7 @@ function loadPrefs(): Prefs {
     showReadingTime: ls.bool("pref.showReadingTime", true),
     markReadOnOpen: ls.bool("pref.markReadOnOpen", true),
     markReadOnScroll: ls.bool("pref.markReadOnScroll", false),
+    markReadOnListScroll: ls.bool("pref.markReadOnListScroll", true),
     // Migrates the pre-0.15 boolean "auto-extract full text" toggle: a user
     // who had it on keeps auto-extraction as their default open mode.
     defaultOpenMode: ls.oneOf<OpenMode>(
