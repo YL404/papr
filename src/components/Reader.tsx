@@ -136,6 +136,14 @@ function inPageFragment(raw: string, sourceUrl: string | null): string | null {
   return null;
 }
 
+/** Children that make an enclosing <a> unsuitable for the external-link arrow:
+ *  a block element would push the arrow onto a line of its own, media has no
+ *  inline flow to trail behind. Matches are looked up with `closest`-style
+ *  descendant queries, so nested wrappers (a figure inside a link) count too. */
+const BLOCK_OR_MEDIA_CHILD =
+  "p, div, section, article, h1, h2, h3, h4, h5, h6, ul, ol, li, table, " +
+  "figure, blockquote, pre, img, picture, svg, video, iframe";
+
 /** Build a click handler for links inside injected HTML (article body, AI
  *  summary). In-page anchor links (footnotes, tables of contents) scroll to
  *  their target within the reader; everything else opens in the external
@@ -566,6 +574,26 @@ export default function Reader({ onToast }: Props) {
       alive = false;
     };
   }, [body, a?.url]);
+
+  // Flag the body links that hand off to the system browser, so the stylesheet
+  // can draw the little ↗ arrow on them (see `.article-body a[data-papr-ext]`).
+  // The external / in-page split comes from `inPageFragment`, the same helper
+  // the click handler uses, so a footnote anchor that scrolls inside the reader
+  // never grows an arrow. Links wrapping a block or a lone image are left
+  // unmarked: the pseudo-element would land on its own line, or dangle under a
+  // picture, which reads as noise rather than as a hint.
+  useEffect(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    const sourceUrl = a?.url ?? null;
+    for (const link of el.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+      link.removeAttribute("data-papr-ext");
+      if (inPageFragment(link.getAttribute("href")!, sourceUrl) != null) continue;
+      if (link.querySelector(BLOCK_OR_MEDIA_CHILD)) continue;
+      if (!link.textContent?.trim()) continue;
+      link.setAttribute("data-papr-ext", "");
+    }
+  }, [displayBody, a?.url, viewMode]);
 
   // When a translation finishes, refetch the article so its persisted
   // `translatedHtml` lands in the cache — the toggle then keeps working after
