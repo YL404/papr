@@ -9,6 +9,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "./api";
 import { useUi, resolveMode, systemPrefersDark } from "./store";
 import { readerFontStackOf } from "./lib/readerFont";
+import { ACCENTS } from "./lib/paletteTheme";
 import type { Palette, ResolvedMode } from "./store";
 import { useArticleActions } from "./hooks/articleActions";
 import { readCurrentItems } from "./lib/currentList";
@@ -26,26 +27,6 @@ import ResizeHandle from "./components/ResizeHandle";
 import Icon from "./components/Icon";
 import { PANEL_BOUNDS } from "./store";
 
-// The accent per (palette, mode), fed to --accent / --accent-soft / --accent-ink.
-// `accent` is the mark, `soft` the active-row/selection wash, `ink` text on that
-// wash. Paper keeps the terracotta clay brand mark in both modes; Frost and
-// Contrast use a system-blue so those families read cool. "One accent, used
-// rarely" still holds — it only ever tints small marks.
-const ACCENTS: Record<Palette, Record<ResolvedMode, { accent: string; soft: string; ink: string }>> = {
-  paper: {
-    light: { accent: "oklch(0.60 0.13 38)", soft: "oklch(0.94 0.04 50)", ink: "oklch(0.42 0.10 38)" },
-    dark: { accent: "oklch(0.74 0.13 45)", soft: "oklch(0.32 0.06 40)", ink: "oklch(0.80 0.10 45)" },
-  },
-  frost: {
-    light: { accent: "#007AFF", soft: "rgba(0, 122, 255, 0.13)", ink: "#0062CC" },
-    dark: { accent: "#0A84FF", soft: "rgba(10, 132, 255, 0.20)", ink: "#6FB4FF" },
-  },
-  contrast: {
-    light: { accent: "#0057D9", soft: "rgba(0, 87, 217, 0.14)", ink: "#003E9E" },
-    dark: { accent: "#0A84FF", soft: "rgba(10, 132, 255, 0.24)", ink: "#8CC4FF" },
-  },
-};
-
 // Native window backing per (palette, mode). The webview is made non-opaque in
 // lib.rs (to kill the white resize flash), so a resize exposes THIS colour in
 // the strip the webview hasn't repainted yet. Each mirrors that theme's
@@ -56,6 +37,10 @@ const BACKING: Record<Palette, Record<ResolvedMode, string>> = {
   paper: { light: "#FBF9F3", dark: "#1D1E1F" },
   frost: { light: "#FFFFFF", dark: "#1D1F23" },
   contrast: { light: "#FFFFFF", dark: "#000000" },
+  forest: { light: "#FAFBF8", dark: "#1A211D" },
+  mint: { light: "#F8FBF9", dark: "#192321" },
+  bee: { light: "#FDFCF5", dark: "#1F1D15" },
+  parchment: { light: "#FDFBF6", dark: "#1E1C18" },
 };
 
 // "#RRGGBB" → [r, g, b]. Used to hand the native backing colour to the

@@ -9,16 +9,32 @@ import { migrateReaderFont } from "./lib/readerFont";
 import type { ArticleQuery } from "./types";
 
 /** Appearance is two independent axes: a colour `Palette` (the family — warm
- *  Paper, cool Frost, high-contrast) and a light/dark `Mode`. Their product is
- *  the 6 themes; the CSS keys off `data-palette` + `data-mode` on the root.
+ *  Paper, cool Frost, high-contrast, plus Forest / Mint / Bee / Parchment
+ *  tinted families) and a light/dark `Mode`. Their product is
+ *  the themes; the CSS keys off `data-palette` + `data-mode` on the root.
  *
  *  `Mode` also carries `"system"`, which isn't a theme of its own — it follows
  *  the OS light/dark preference and resolves to one of the two concrete
  *  `ResolvedMode`s (see `resolveMode`) that the CSS + native backing key off. */
-export type Palette = "paper" | "frost" | "contrast";
+export type Palette =
+  | "paper"
+  | "frost"
+  | "contrast"
+  | "forest"
+  | "mint"
+  | "bee"
+  | "parchment";
 export type Mode = "light" | "dark" | "system";
 export type ResolvedMode = "light" | "dark";
-export const PALETTES: Palette[] = ["paper", "frost", "contrast"];
+export const PALETTES: Palette[] = [
+  "paper",
+  "frost",
+  "contrast",
+  "forest",
+  "mint",
+  "bee",
+  "parchment",
+];
 export const MODES: Mode[] = ["light", "dark", "system"];
 
 /** Whether the OS currently prefers a dark colour scheme. Drives `"system"`

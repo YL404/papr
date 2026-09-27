@@ -11,7 +11,16 @@ import { useTranslation } from "react-i18next";
 import { getVersion } from "@tauri-apps/api/app";
 import { disable, enable, isEnabled } from "@tauri-apps/plugin-autostart";
 import * as api from "../api";
-import { useUi, READER_BOUNDS, type OpenMode } from "../store";
+import {
+  useUi,
+  READER_BOUNDS,
+  PALETTES,
+  resolveMode,
+  type OpenMode,
+  type Palette,
+  type ResolvedMode,
+} from "../store";
+import { ACCENTS } from "../lib/paletteTheme";
 import { useArticleActions } from "../hooks/articleActions";
 import { useFocusTrap } from "../hooks/useFocusTrap";
 import { LANGUAGES, setLanguage, type Language } from "../i18n";
@@ -301,6 +310,59 @@ function Segmented<T extends string>({
         </button>
       ))}
     </div>
+  );
+}
+
+/** A mini mockup of the app in one palette: accent title bar, avatar dot,
+ *  muted subtitle, and a lighter reader panel with two text lines. The preview
+ *  carries its own `data-palette` + `data-mode` so the real theme CSS paints
+ *  it, with that palette's accent inlined (accents live in JS, not CSS). */
+function PalettePreview({
+  value,
+  label,
+  selected,
+  mode,
+  onSelect,
+}: {
+  value: Palette;
+  label: string;
+  selected: boolean;
+  mode: ResolvedMode;
+  onSelect: () => void;
+}) {
+  const a = ACCENTS[value][mode];
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      className={selected ? "palette-card on" : "palette-card"}
+      onClick={onSelect}
+    >
+      <div
+        className="palette-card-preview"
+        data-palette={value}
+        data-mode={mode}
+        style={
+          {
+            "--accent": a.accent,
+            "--accent-soft": a.soft,
+            "--accent-ink": a.ink,
+          } as React.CSSProperties
+        }
+      >
+        <div className="pc-head">
+          <div className="pc-title" />
+          <div className="pc-dot" />
+        </div>
+        <div className="pc-sub" />
+        <div className="pc-panel">
+          <div className="pc-line" />
+          <div className="pc-line pc-line-short" />
+        </div>
+      </div>
+      <span className="palette-card-label">{label}</span>
+    </button>
   );
 }
 
@@ -899,20 +961,28 @@ function AppearanceSection() {
       </div>
       <div className="settings-group">
         <h3 className="settings-group-title">{t("settings.appearance.theme")}</h3>
-        <Row
-          label={t("settings.appearance.palette")}
-          desc={t("settings.appearance.paletteDesc")}
+        <div className="settings-row">
+          <div className="settings-row-text">
+            <div className="settings-row-label">{t("settings.appearance.palette")}</div>
+            <div className="settings-row-desc">{t("settings.appearance.paletteDesc")}</div>
+          </div>
+        </div>
+        <div
+          className="palette-grid"
+          role="radiogroup"
+          aria-label={t("settings.appearance.palette")}
         >
-          <Segmented
-            value={palette}
-            options={[
-              { value: "paper", label: t("settings.appearance.palettePaper") },
-              { value: "frost", label: t("settings.appearance.paletteFrost") },
-              { value: "contrast", label: t("settings.appearance.paletteContrast") },
-            ]}
-            onChange={setPalette}
-          />
-        </Row>
+          {PALETTES.map((p) => (
+            <PalettePreview
+              key={p}
+              value={p}
+              label={t(`settings.appearance.palette${p.charAt(0).toUpperCase()}${p.slice(1)}`)}
+              selected={palette === p}
+              mode={resolveMode(mode)}
+              onSelect={() => setPalette(p)}
+            />
+          ))}
+        </div>
         <Row
           label={t("settings.appearance.appearance")}
           desc={t("settings.appearance.appearanceDesc")}

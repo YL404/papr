@@ -5,10 +5,16 @@
      draws the overlay scrollbar itself and only this picks its light/dark
      variant. [data-mode="dark"] flips it below. */
   color-scheme: light;
+}
 
-  /* base palette — Paper, light (the default of the 6 = palette × mode).
-     Frost and Contrast palettes override the surfaces below; [data-mode="dark"]
-     variants sit further down. */
+/* base palette — Paper, light (the default of the themes = palette × mode).
+   Also keyed to [data-palette="paper"][data-mode="light"] so a Paper preview
+   card inside a dark app re-declares the light surfaces instead of inheriting
+   the root's dark ones (previews set both attributes themselves). Frost and
+   Contrast palettes override the surfaces below; [data-mode="dark"]
+   variants sit further down. */
+:root,
+[data-palette="paper"][data-mode="light"] {
   --paper: #F6F3EC;
   --panel: #FBF9F3;
   --panel-2: #FFFEFA;
@@ -266,6 +272,208 @@
   --shadow-ring: 0 0 0 1px rgba(255, 255, 255, 0.14);
 
   --accent-soft: rgba(10, 132, 255, 0.24);
+}
+
+/* ══ Forest palette — sage neutrals, forest-green accent ════════════════════
+   A light green-grey chrome (like mist through trees) with a deep green mark.
+   Light surfaces stay a step apart so the panes read as depth; dark flips to
+   a green-black graphite. Accent comes from App.tsx / preview inline styles
+   (lib/paletteTheme.ts ACCENTS) — the --accent-soft here is only a fallback. */
+[data-palette="forest"] {
+  --paper: #E7ECE7;
+  --panel: #EFF3EF;
+  --panel-2: #F6F9F6;
+  --reader: #FAFBFA;
+  --resize-backing: #FAFBFA;
+
+  --ink: #1A231B;
+  --ink-2: #2F3B31;
+  --muted: #6A756C;
+  --muted-2: #96A098;
+  --hair: rgba(26, 40, 30, 0.10);
+  --hair-strong: rgba(26, 40, 30, 0.16);
+  --hover: rgba(26, 40, 30, 0.05);
+  --selected: rgba(47, 93, 58, 0.14);
+
+  --shadow-raise: 0 1px 2px oklch(0.20 0.02 150 / 0.12);
+  --shadow-pop: 0 14px 38px oklch(0.20 0.02 150 / 0.14);
+  --shadow-modal: 0 26px 64px oklch(0.18 0.02 150 / 0.22);
+  --shadow-ring: 0 0 0 1px oklch(0.20 0.02 150 / 0.06);
+
+  --accent-soft: rgba(47, 93, 58, 0.12);
+}
+
+[data-palette="forest"][data-mode="dark"] {
+  --paper: #0B0F0C;
+  --panel: #121714;
+  --panel-2: #171D19;
+  --reader: #1A211D;
+  --resize-backing: #1A211D;
+
+  --ink: #E2EBE4;
+  --ink-2: #B5C2B7;
+  --muted: #7C8A80;
+  --muted-2: #58645B;
+  --hair: rgba(220, 235, 224, 0.09);
+  --hair-strong: rgba(220, 235, 224, 0.15);
+  --hover: rgba(220, 235, 224, 0.05);
+  --selected: rgba(91, 155, 106, 0.18);
+
+  --shadow-raise: 0 1px 2px oklch(0.05 0.01 150 / 0.5);
+  --shadow-pop: 0 14px 38px oklch(0.04 0.01 150 / 0.6);
+  --shadow-modal: 0 26px 64px oklch(0.04 0.01 150 / 0.68);
+  --shadow-ring: 0 0 0 1px oklch(0 0 0 / 0.3);
+
+  --accent-soft: rgba(91, 155, 106, 0.18);
+}
+
+/* ══ Mint palette — pale aqua neutrals, teal accent ═════════════════════════ */
+[data-palette="mint"] {
+  --paper: #E3EDE8;
+  --panel: #EBF4F0;
+  --panel-2: #F3F9F6;
+  --reader: #F7FBF9;
+  --resize-backing: #F7FBF9;
+
+  --ink: #17251F;
+  --ink-2: #2C3F37;
+  --muted: #67766F;
+  --muted-2: #93A19A;
+  --hair: rgba(20, 45, 38, 0.10);
+  --hair-strong: rgba(20, 45, 38, 0.16);
+  --hover: rgba(20, 45, 38, 0.05);
+  --selected: rgba(46, 143, 122, 0.14);
+
+  --shadow-raise: 0 1px 2px oklch(0.18 0.02 170 / 0.12);
+  --shadow-pop: 0 14px 38px oklch(0.18 0.02 170 / 0.14);
+  --shadow-modal: 0 26px 64px oklch(0.16 0.02 170 / 0.22);
+  --shadow-ring: 0 0 0 1px oklch(0.18 0.02 170 / 0.06);
+
+  --accent-soft: rgba(46, 143, 122, 0.12);
+}
+
+[data-palette="mint"][data-mode="dark"] {
+  --paper: #0A0F0E;
+  --panel: #111816;
+  --panel-2: #161E1C;
+  --reader: #192321;
+  --resize-backing: #192321;
+
+  --ink: #E0EDE8;
+  --ink-2: #B0C2BB;
+  --muted: #788880;
+  --muted-2: #546059;
+  --hair: rgba(214, 236, 228, 0.09);
+  --hair-strong: rgba(214, 236, 228, 0.15);
+  --hover: rgba(214, 236, 228, 0.05);
+  --selected: rgba(76, 179, 154, 0.18);
+
+  --shadow-raise: 0 1px 2px oklch(0.05 0.01 170 / 0.5);
+  --shadow-pop: 0 14px 38px oklch(0.04 0.01 170 / 0.6);
+  --shadow-modal: 0 26px 64px oklch(0.04 0.01 170 / 0.68);
+  --shadow-ring: 0 0 0 1px oklch(0 0 0 / 0.3);
+
+  --accent-soft: rgba(76, 179, 154, 0.18);
+}
+
+/* ══ Bee palette — warm honey neutrals, gold accent ═════════════════════════ */
+[data-palette="bee"] {
+  --paper: #F0ECD8;
+  --panel: #F6F2E2;
+  --panel-2: #FBF8ED;
+  --reader: #FDFCF5;
+  --resize-backing: #FDFCF5;
+
+  --ink: #2A2617;
+  --ink-2: #3E3924;
+  --muted: #7A7460;
+  --muted-2: #A8A189;
+  --hair: rgba(50, 45, 20, 0.10);
+  --hair-strong: rgba(50, 45, 20, 0.16);
+  --hover: rgba(50, 45, 20, 0.05);
+  --selected: rgba(168, 134, 43, 0.16);
+
+  --shadow-raise: 0 1px 2px oklch(0.20 0.03 90 / 0.12);
+  --shadow-pop: 0 14px 38px oklch(0.20 0.03 90 / 0.14);
+  --shadow-modal: 0 26px 64px oklch(0.18 0.03 90 / 0.22);
+  --shadow-ring: 0 0 0 1px oklch(0.20 0.03 90 / 0.06);
+
+  --accent-soft: rgba(168, 134, 43, 0.14);
+}
+
+[data-palette="bee"][data-mode="dark"] {
+  --paper: #0F0E0A;
+  --panel: #16150F;
+  --panel-2: #1C1B14;
+  --reader: #1F1D15;
+  --resize-backing: #1F1D15;
+
+  --ink: #EDE8D8;
+  --ink-2: #C4BD9F;
+  --muted: #8F8870;
+  --muted-2: #635E4C;
+  --hair: rgba(240, 232, 200, 0.09);
+  --hair-strong: rgba(240, 232, 200, 0.15);
+  --hover: rgba(240, 232, 200, 0.05);
+  --selected: rgba(212, 184, 74, 0.16);
+
+  --shadow-raise: 0 1px 2px oklch(0.05 0.01 90 / 0.5);
+  --shadow-pop: 0 14px 38px oklch(0.04 0.01 90 / 0.6);
+  --shadow-modal: 0 26px 64px oklch(0.04 0.01 90 / 0.68);
+  --shadow-ring: 0 0 0 1px oklch(0 0 0 / 0.3);
+
+  --accent-soft: rgba(212, 184, 74, 0.16);
+}
+
+/* ══ Parchment palette — warm vellum neutrals, terracotta accent ════════════
+   Close to Paper but brighter and cleaner (the reading surface stays near
+   white), with a more orange-forward clay mark. */
+[data-palette="parchment"] {
+  --paper: #EBE7DE;
+  --panel: #F3F0E8;
+  --panel-2: #FAF8F2;
+  --reader: #FDFBF6;
+  --resize-backing: #FDFBF6;
+
+  --ink: #26221C;
+  --ink-2: #3C372F;
+  --muted: #78736B;
+  --muted-2: #A59F96;
+  --hair: rgba(40, 35, 25, 0.10);
+  --hair-strong: rgba(40, 35, 25, 0.16);
+  --hover: rgba(40, 35, 25, 0.05);
+  --selected: rgba(196, 90, 50, 0.14);
+
+  --shadow-raise: 0 1px 2px oklch(0.18 0.02 50 / 0.12);
+  --shadow-pop: 0 14px 38px oklch(0.18 0.02 50 / 0.14);
+  --shadow-modal: 0 26px 64px oklch(0.16 0.02 50 / 0.22);
+  --shadow-ring: 0 0 0 1px oklch(0.18 0.02 50 / 0.06);
+
+  --accent-soft: rgba(196, 90, 50, 0.12);
+}
+
+[data-palette="parchment"][data-mode="dark"] {
+  --paper: #0E0D0B;
+  --panel: #151412;
+  --panel-2: #1B1A17;
+  --reader: #1E1C18;
+  --resize-backing: #1E1C18;
+
+  --ink: #EDE6DC;
+  --ink-2: #C4BCB0;
+  --muted: #8A837A;
+  --muted-2: #5E5952;
+  --hair: rgba(240, 232, 216, 0.09);
+  --hair-strong: rgba(240, 232, 216, 0.15);
+  --hover: rgba(240, 232, 216, 0.05);
+  --selected: rgba(224, 138, 95, 0.16);
+
+  --shadow-raise: 0 1px 2px oklch(0.05 0.01 50 / 0.5);
+  --shadow-pop: 0 14px 38px oklch(0.04 0.01 50 / 0.6);
+  --shadow-modal: 0 26px 64px oklch(0.04 0.01 50 / 0.68);
+  --shadow-ring: 0 0 0 1px oklch(0 0 0 / 0.3);
+
+  --accent-soft: rgba(224, 138, 95, 0.16);
 }
 
 /* ── Frost + Contrast: macOS-style defined selection (both modes) ───────────
@@ -1996,6 +2204,118 @@ button { font-family: inherit; }
   min-width: 38px;
   text-align: right;
   white-space: nowrap;
+}
+
+/* Palette preview cards — a mini app mockup per palette (accent title bar,
+   avatar dot, muted subtitle, lighter reader panel). Each card re-declares
+   data-palette + data-mode + accent so it paints in its own colours
+   regardless of the active theme; the selected card rings in its accent.
+   Sized so all 7 fit one row in the 920px settings window (≈644px content):
+   minmax ≤81px keeps auto-fill on 7 columns at the default width; the mockup
+   uses 3/2 (shorter than the old 148px-wide 16/10) so head + sub + a two-line
+   reader panel still fit without clipping. */
+.palette-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(74px, 1fr));
+  gap: 10px;
+  padding: 4px 0 8px;
+}
+.palette-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  text-align: center;
+  min-width: 0;
+}
+.palette-card-preview {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 9px;
+  border: 1.5px solid var(--hair-strong);
+  background: var(--paper);
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  transition: border-color .15s, box-shadow .15s;
+}
+.palette-card:hover .palette-card-preview {
+  box-shadow: var(--shadow-raise);
+}
+.palette-card.on .palette-card-preview {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.pc-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.pc-title {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--accent);
+  max-width: 62%;
+}
+.pc-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--panel-2);
+  border: 2px solid var(--hair-strong);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.palette-card.on .pc-dot {
+  border-color: var(--accent);
+  background: var(--accent);
+  box-shadow: inset 0 0 0 2px var(--panel-2);
+}
+.pc-sub {
+  height: 4px;
+  width: 44%;
+  border-radius: 3px;
+  background: var(--hair-strong);
+}
+.pc-panel {
+  margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 4px 5px;
+  border-radius: 6px;
+  background: var(--reader);
+  border: 1px solid var(--hair);
+  min-height: 0;
+  flex: 0 0 auto;
+}
+.pc-line {
+  height: 4px;
+  border-radius: 3px;
+  background: var(--muted-2);
+  opacity: 0.55;
+  width: 72%;
+}
+.pc-line-short { width: 44%; }
+.palette-card-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.palette-card.on .palette-card-label {
+  color: var(--accent-ink);
+  font-weight: 600;
 }
 
 /* Segmented (light variant) */

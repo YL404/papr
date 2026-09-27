@@ -112,6 +112,14 @@ pub fn run() {
                     ("frost", true) => (0x1D, 0x1F, 0x23),
                     ("contrast", false) => (0xFF, 0xFF, 0xFF),
                     ("contrast", true) => (0x00, 0x00, 0x00),
+                    ("forest", false) => (0xFA, 0xFB, 0xF8),
+                    ("forest", true) => (0x1A, 0x21, 0x1D),
+                    ("mint", false) => (0xF8, 0xFB, 0xF9),
+                    ("mint", true) => (0x19, 0x23, 0x21),
+                    ("bee", false) => (0xFD, 0xFC, 0xF5),
+                    ("bee", true) => (0x1F, 0x1D, 0x15),
+                    ("parchment", false) => (0xFD, 0xFB, 0xF6),
+                    ("parchment", true) => (0x1E, 0x1C, 0x18),
                     // Paper — dark honours the legacy dark-shade key.
                     (_, true) => match dark_shade.as_deref() {
                         Some("dimmer") => (0x1C, 0x17, 0x15),
