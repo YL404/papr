@@ -1176,19 +1176,11 @@ button { font-family: inherit; }
   background: var(--reader);
 }
 
-/* Reading progress, after claude.dev's blog: an accent hairline along the
-   toolbar's bottom edge fills left→right, and the toolbar carries the block-bar
-   twin — ▓ read over ░ to go, zero-padded pct. Both hide in webview mode (the
-   native page view has no DOM scroll to measure). */
-.read-prog-line {
-  position: absolute;
-  top: 37px; /* rides the toolbar's bottom-border line */
-  left: 0;
-  height: 1px;
-  background: var(--accent);
-  z-index: 2;
-  pointer-events: none;
-}
+/* Reading progress, after claude.dev's blog: the toolbar carries a block bar —
+   ▓ read over ░ to go, zero-padded pct. Hidden in webview mode (the native
+   page view has no DOM scroll to measure). A hairline twin at the toolbar's
+   bottom edge existed twice and was removed twice (#28: it flickered while
+   scrolling on WKWebView) — don't bring it back. */
 .read-prog {
   font-family: var(--mono);
   font-size: 11px;

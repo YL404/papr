@@ -230,6 +230,10 @@ export default function Reader({ onToast }: Props) {
   // fires far faster than the 28-slot bar or the 2-digit pct can visibly
   // change, so this keeps per-scroll setStates to the frames that matter.
   const readProgSig = useRef("");
+  // Scroll position + fraction at the last measure, for the monotonic clamp in
+  // `updateReadProg` (the lesson of #28, where the removed hairline bar slid
+  // backward as lazy images grew the body mid-scroll).
+  const readProgMonRef = useRef<{ scrollTop: number; t: number } | null>(null);
   const playTrack = usePlayer((s) => s.play);
   const playingSrc = usePlayer((s) => (s.playing ? s.track?.src : null));
 
@@ -270,6 +274,7 @@ export default function Reader({ onToast }: Props) {
     setViewMode("reader");
     setScrolled(false);
     readProgSig.current = "";
+    readProgMonRef.current = null;
     setReadProg(0);
     setTagPick(null);
     setHeroBroken(false);
@@ -676,8 +681,10 @@ export default function Reader({ onToast }: Props) {
   /** Fraction of the article read, after claude.dev's blog reading bar: 100%
    *  lands when the article's foot reaches the container's foot — not at the
    *  scroll container's padded end — and a body shorter than the viewport is
-   *  fully read. Only the rendered signature (28 blocks / 2-digit pct) is
-   *  allowed to trigger a re-render. */
+   *  fully read. The fraction only regresses on a genuine scroll-up (#28):
+   *  lazy images keep growing the body mid-read, and a raw fraction would
+   *  slide backward while the reader only moved down. Only the rendered
+   *  signature (28 blocks / 2-digit pct) is allowed to trigger a re-render. */
   const updateReadProg = useCallback(() => {
     const el = scrollRef.current;
     const art = el?.firstElementChild as HTMLElement | null;
@@ -691,10 +698,14 @@ export default function Reader({ onToast }: Props) {
       el.scrollTop;
     const foot = top + art.offsetHeight - el.clientHeight;
     const t = foot <= 0 ? 1 : Math.max(0, Math.min(1, el.scrollTop / foot));
-    const sig = `${Math.round(t * 28)}/${Math.round(t * 100)}`;
+    const prev = readProgMonRef.current;
+    const monotonic =
+      prev && el.scrollTop >= prev.scrollTop ? Math.max(t, prev.t) : t;
+    readProgMonRef.current = { scrollTop: el.scrollTop, t: monotonic };
+    const sig = `${Math.round(monotonic * 28)}/${Math.round(monotonic * 100)}`;
     if (sig !== readProgSig.current) {
       readProgSig.current = sig;
-      setReadProg(t);
+      setReadProg(monotonic);
     }
   }, []);
 
@@ -995,16 +1006,6 @@ export default function Reader({ onToast }: Props) {
           </div>
         )}
       </div>
-
-      {viewMode === "reader" && (
-        // Progress hairline riding the toolbar's bottom-border line — the
-        // same bar's slim twin, filling left→right as the article is read.
-        <div
-          className="read-prog-line"
-          aria-hidden="true"
-          style={{ width: `${readProg * 100}%` }}
-        />
-      )}
 
       {viewMode === "web" && a.url ? (
         <div className="reader-webview">
