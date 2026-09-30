@@ -179,6 +179,8 @@ export default function Reader({ onToast }: Props) {
   const defaultOpenMode = useUi((s) => s.prefs.defaultOpenMode);
 
   const [scrolled, setScrolled] = useState(false);
+  // Reading progress, 0..1 — see `updateReadProg`.
+  const [readProg, setReadProg] = useState(0);
   // Which body to show when an extraction exists follows the default open
   // mode: "reader" (the default) shows the feed's own content and extraction
   // is opt-in via the toolbar button; "extracted" shows the full text.
@@ -224,6 +226,10 @@ export default function Reader({ onToast }: Props) {
   // events near the foot doesn't fire `setRead` repeatedly before the
   // optimistic cache patch lands.
   const scrollMarkedRef = useRef<number | null>(null);
+  // Last rendered (blocks, pct) signature of the reading progress — scroll
+  // fires far faster than the 28-slot bar or the 2-digit pct can visibly
+  // change, so this keeps per-scroll setStates to the frames that matter.
+  const readProgSig = useRef("");
   const playTrack = usePlayer((s) => s.play);
   const playingSrc = usePlayer((s) => (s.playing ? s.track?.src : null));
 
@@ -263,6 +269,8 @@ export default function Reader({ onToast }: Props) {
     setShowTranslation(false);
     setViewMode("reader");
     setScrolled(false);
+    readProgSig.current = "";
+    setReadProg(0);
     setTagPick(null);
     setHeroBroken(false);
     setHeroDataUrl(null);
@@ -665,10 +673,36 @@ export default function Reader({ onToast }: Props) {
     }
   }, [markReadOnScroll, a, actions]);
 
+  /** Fraction of the article read, after claude.dev's blog reading bar: 100%
+   *  lands when the article's foot reaches the container's foot — not at the
+   *  scroll container's padded end — and a body shorter than the viewport is
+   *  fully read. Only the rendered signature (28 blocks / 2-digit pct) is
+   *  allowed to trigger a re-render. */
+  const updateReadProg = useCallback(() => {
+    const el = scrollRef.current;
+    const art = el?.firstElementChild as HTMLElement | null;
+    if (!el || !art) return;
+    // Article top in content coordinates (rect diff is scroll-dependent, so
+    // re-add scrollTop) — offsetTop would resolve against .reader, not this
+    // scroll container.
+    const top =
+      art.getBoundingClientRect().top -
+      el.getBoundingClientRect().top +
+      el.scrollTop;
+    const foot = top + art.offsetHeight - el.clientHeight;
+    const t = foot <= 0 ? 1 : Math.max(0, Math.min(1, el.scrollTop / foot));
+    const sig = `${Math.round(t * 28)}/${Math.round(t * 100)}`;
+    if (sig !== readProgSig.current) {
+      readProgSig.current = sig;
+      setReadProg(t);
+    }
+  }, []);
+
   const onScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     setScrolled(el.scrollTop > 8);
+    updateReadProg();
     markReadIfAtFoot();
   };
 
@@ -677,11 +711,22 @@ export default function Reader({ onToast }: Props) {
   // extraction finishing). The check is deferred briefly so body images have a
   // chance to load — measuring `scrollHeight` before they do could read a
   // too-small height and mark a genuinely long article read prematurely. The
-  // `scrollMarkedRef` guard keeps it idempotent.
+  // `scrollMarkedRef` guard keeps it idempotent. The same settle delay re-measures
+  // the progress bar, whose height also moves as images load.
   useEffect(() => {
-    const timer = window.setTimeout(markReadIfAtFoot, 400);
+    const timer = window.setTimeout(() => {
+      updateReadProg();
+      markReadIfAtFoot();
+    }, 400);
     return () => window.clearTimeout(timer);
-  }, [markReadIfAtFoot, showExtracted, a?.extractedHtml, a?.contentHtml]);
+  }, [updateReadProg, markReadIfAtFoot, showExtracted, a?.extractedHtml, a?.contentHtml]);
+
+  // Progress also moves without a scroll event whenever the body's height
+  // changes in place — extract/translation swaps and the wide toggle reflow
+  // the article — so re-measure as soon as they land.
+  useEffect(() => {
+    updateReadProg();
+  }, [updateReadProg, displayBody, viewMode, wide]);
 
 
   const copyLink = () => {
@@ -830,6 +875,10 @@ export default function Reader({ onToast }: Props) {
 
   const ytId = a.sourceType === "youtube" ? youtubeId(a.url) : null;
 
+  // The block-bar reading progress: 28 slots after the source design, filled
+  // ones drawn ▓ over ░, with a zero-padded percentage on the right.
+  const progFilled = Math.round(readProg * 28);
+
   return (
     <div className="reader" role="main">
       <div
@@ -938,7 +987,24 @@ export default function Reader({ onToast }: Props) {
             <Icon name="open" size={16} />
           </button>
         )}
+        {viewMode === "reader" && (
+          <div className="read-prog" aria-hidden="true">
+            <b>{"▓".repeat(progFilled)}</b>
+            {"░".repeat(28 - progFilled)}
+            <span>{String(Math.round(readProg * 100)).padStart(2, "0")}%</span>
+          </div>
+        )}
       </div>
+
+      {viewMode === "reader" && (
+        // Progress hairline riding the toolbar's bottom-border line — the
+        // same bar's slim twin, filling left→right as the article is read.
+        <div
+          className="read-prog-line"
+          aria-hidden="true"
+          style={{ width: `${readProg * 100}%` }}
+        />
+      )}
 
       {viewMode === "web" && a.url ? (
         <div className="reader-webview">
