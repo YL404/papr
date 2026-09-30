@@ -347,12 +347,14 @@ pub async fn rename_feed(state: State<'_, AppState>, id: i64, title: String) -> 
 
 /// Refresh every feed. Progress reaches the webview as a `refresh-progress`
 /// event (see `scheduler::refresh_all`), not a channel bound to this call.
+/// Returns the new-article count, or null when the run was skipped because a
+/// refresh was already in flight.
 #[tauri::command]
 pub async fn refresh_feeds(
     app: AppHandle,
     feed_id: Option<i64>,
     folder_id: Option<i64>,
-) -> AppResult<usize> {
+) -> AppResult<Option<usize>> {
     // A single feed wins over a folder when both are passed; with neither, this
     // is the whole-library manual refresh.
     let scope = match (feed_id, folder_id) {

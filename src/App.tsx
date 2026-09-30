@@ -254,11 +254,13 @@ export default function App() {
   // StrictMode, which previously fired the refresh twice in dev.
   //
   // It guards on *any* run, not just the user's own: refreshes are single-flight
-  // on the backend, so a second request would be dropped and report a
-  // misleading "up to date".
+  // on the backend, so a second request would only be dropped as a duplicate.
   const doRefresh = useCallback((scope?: { feedId?: number; folderId?: number }) => {
     const ui = useUi.getState();
-    if (ui.refresh || ui.refreshManual) return;
+    if (ui.refresh || ui.refreshManual) {
+      showToast(t("app.alreadyRefreshing"));
+      return;
+    }
     ui.beginManualRefresh();
     api
       .refreshFeeds(scope)
@@ -267,10 +269,10 @@ export default function App() {
         // `invalidateQueries()` would also refetch unrelated queries (tags,
         // FreshRSS status, the open feed-discovery search).
         actions.refreshAfterFetch();
-        // A run still in flight means ours was dropped as a duplicate rather
-        // than having found nothing, so don't claim the library is up to date.
-        if (n > 0) showToast(t("app.foundNew", { count: n }));
-        else if (!useUi.getState().refresh) showToast(t("app.upToDate"));
+        // `null` = the backend dropped this run because another refresh was
+        // already in flight; the running one reports for itself.
+        if (n == null) return;
+        showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));
       })
       .catch(reportError)
       .finally(() => useUi.getState().endManualRefresh());

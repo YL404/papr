@@ -76,7 +76,8 @@
   "app": {
     "resizeSidebar": "\u8c03\u6574\u4fa7\u680f\u5bbd\u5ea6",
     "resizeList": "\u8c03\u6574\u6587\u7ae0\u5217\u8868\u5bbd\u5ea6",
-    "refreshing": "\u6b63\u5728\u5237\u65b0\u6240\u6709\u8ba2\u9605\u6e90\u2026",
+    "refreshing": "\u5237\u65b0\u4e2d\u2026",
+    "alreadyRefreshing": "\u5df2\u6709\u5237\u65b0\u6b63\u5728\u8fdb\u884c",
     "refreshingAuto": "\u540e\u53f0\u81ea\u52a8\u5237\u65b0\u4e2d",
     "refreshingCount": "{{done}}/{{total}}",
     "refreshingAutoCount": "\u81ea\u52a8 \u00b7 {{done}}/{{total}}",

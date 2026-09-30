@@ -76,7 +76,8 @@
   "app": {
     "resizeSidebar": "Resize sidebar",
     "resizeList": "Resize article list",
-    "refreshing": "Refreshing all feeds\u2026",
+    "refreshing": "Refreshing\u2026",
+    "alreadyRefreshing": "A refresh is already running",
     "refreshingAuto": "Auto-refreshing in the background",
     "refreshingCount": "{{done}}/{{total}}",
     "refreshingAutoCount": "Auto \u00b7 {{done}}/{{total}}",

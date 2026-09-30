@@ -22,7 +22,8 @@ pub use refresh::RefreshScope;
 /// Refresh feeds selected by `scope`, reporting progress to the webview as a
 /// `refresh-progress` event, then running the desktop-only tail: emit
 /// `feeds-updated`, notify, and refresh the tray. Returns the new-article
-/// count.
+/// count, or `None` when the run was skipped because another refresh was
+/// already in flight.
 ///
 /// Progress is an app event rather than a per-call channel so that every
 /// trigger — this scheduler, the manual command, the tray, OPML import —
@@ -31,7 +32,7 @@ pub async fn refresh_all(
     app: &AppHandle,
     wait_if_busy: bool,
     scope: RefreshScope,
-) -> AppResult<usize> {
+) -> AppResult<Option<usize>> {
     let state = app.state::<AppState>();
 
     // Only one refresh at a time: the manual command and the periodic scheduler
@@ -45,7 +46,7 @@ pub async fn refresh_all(
             Ok(guard) => guard,
             Err(_) => {
                 log::debug!("refresh already in progress; skipping this run");
-                return Ok(0);
+                return Ok(None);
             }
         }
     };
@@ -72,7 +73,7 @@ pub async fn refresh_all(
     // Background scheduler with nothing due this cycle: bow out before the
     // heavier tail (notifications, tray) so an idle tick is genuinely idle.
     if !summary.ran {
-        return Ok(0);
+        return Ok(Some(0));
     }
 
     let total_new = summary.new_articles;
@@ -82,7 +83,7 @@ pub async fn refresh_all(
 
     notify::update_badge(app).await;
     tray::refresh(app).await;
-    Ok(total_new)
+    Ok(Some(total_new))
 }
 
 /// How often the background loop wakes to look for *due* feeds. Each tick is a

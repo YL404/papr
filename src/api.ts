@@ -67,15 +67,18 @@ export const setFeedOpenMode = (
   mode: "reader" | "extracted" | "web" | null,
 ) => invoke<void>("set_feed_open_mode", { id, mode });
 
-/** Refresh feeds, returning the new-article count. With no `scope` this
- *  refreshes every feed; pass `{ feedId }` for a single feed or `{ folderId }`
- *  for every feed in one folder.
+/** Refresh feeds, returning the new-article count — or null when the backend
+ *  skipped this run because another refresh was already in flight. With no
+ *  `scope` this refreshes every feed; pass `{ feedId }` for a single feed or
+ *  `{ folderId }` for every feed in one folder.
  *
  *  Progress does not come back through this promise: the backend streams it to
  *  every trigger (this command, the scheduler tick, the tray) as a single
  *  `refresh-progress` event, so the UI has one place to listen. */
-export const refreshFeeds = (scope?: { feedId?: number; folderId?: number }) =>
-  invoke<number>("refresh_feeds", {
+export const refreshFeeds = (
+  scope?: { feedId?: number; folderId?: number },
+): Promise<number | null> =>
+  invoke<number | null>("refresh_feeds", {
     feedId: scope?.feedId ?? null,
     folderId: scope?.folderId ?? null,
   });
