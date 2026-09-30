@@ -1195,11 +1195,11 @@ button { font-family: inherit; }
 .read-prog span {
   color: var(--muted);
   margin-left: 7px;
-  /* Reserve the 3-char "100%" width up front — letting the pct grow from
-     2 to 3 chars at full progress would widen the widget mid-read and shove
-     the toolbar's other items sideways. */
+  /* Reserve the 4-char "100%" width up front (two zero-padded digits plus
+     the sign is 3ch — the pct only grows at full progress) — letting it
+     widen mid-read would shove the toolbar's other items sideways. */
   display: inline-block;
-  min-width: 3ch;
+  min-width: 4ch;
   text-align: right;
 }
 .tb-btn {
