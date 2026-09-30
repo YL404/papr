@@ -150,6 +150,7 @@ export type TranslateEvent =
 
 export type RefreshProgress =
   | { event: "started"; data: { total: number } }
+  | { event: "feedStart"; data: { feedId: number } }
   | {
       event: "feedDone";
       data: { feedId: number; newArticles: number; error: string | null };

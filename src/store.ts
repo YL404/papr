@@ -6,7 +6,7 @@ import { create } from "zustand";
 import i18n from "./i18n";
 import * as api from "./api";
 import { migrateReaderFont } from "./lib/readerFont";
-import type { ArticleQuery } from "./types";
+import type { ArticleQuery, RefreshProgress } from "./types";
 
 /** Appearance is two independent axes: a colour `Palette` (the family — warm
  *  Paper, cool Frost, high-contrast, plus Forest / Mint / Bee / Parchment
@@ -142,6 +142,25 @@ const ls = {
     localStorage.setItem(k, typeof v === "boolean" ? (v ? "1" : "0") : String(v)),
 };
 
+/** Live state of an in-progress feed refresh, fed by the backend's
+ *  `refresh-progress` event. `null` whenever nothing is running.
+ *
+ *  Progress is app-wide rather than per-trigger: the desktop scheduler, the
+ *  manual refresh, the tray and OPML import all run through the same locked
+ *  pipeline, so at most one of these exists at a time. */
+export interface RefreshState {
+  /** Sources in this run. Never 0 — a `started` with no sources is an idle
+   *  scheduler tick, not a run, and is dropped by `applyRefreshEvent`. */
+  total: number;
+  /** Sources finished so far, whether or not they brought articles. */
+  done: number;
+  /** Sources being fetched *right now* — a set, not one: the pipeline keeps
+   *  `net_concurrency` (default 6) fetches in flight at a time. */
+  inFlight: number[];
+  /** Sources that reported an error in this run. */
+  failed: number;
+}
+
 interface UiState {
   /** The active sidebar selection driving the article list. */
   query: ArticleQuery;
@@ -201,6 +220,14 @@ interface UiState {
    *  reader suspends that view while a menu is up. */
   menuOpen: boolean;
 
+  /** The refresh currently running, or null. Driven by `applyRefreshEvent`. */
+  refresh: RefreshState | null;
+  /** Set between a user-initiated refresh click and its promise settling, so
+   *  the UI can tell "you asked for this" from a background tick. Refreshes
+   *  are single-flight on the backend, so the run in flight is the one whose
+   *  result they are waiting for. */
+  refreshManual: boolean;
+
   select: (query: ArticleQuery, label: string) => void;
   openArticle: (id: number | null) => void;
   toggleUnreadOnly: () => void;
@@ -222,6 +249,10 @@ interface UiState {
   requestAiSummary: () => void;
   setModalOpen: (v: boolean) => void;
   setMenuOpen: (v: boolean) => void;
+
+  beginManualRefresh: () => void;
+  endManualRefresh: () => void;
+  applyRefreshEvent: (e: RefreshProgress) => void;
 }
 
 const PREF_KEYS: (keyof Prefs)[] = [
@@ -344,6 +375,8 @@ export const useUi = create<UiState>((set, get) => ({
   aiSummaryRequest: 0,
   modalOpen: false,
   menuOpen: false,
+  refresh: null,
+  refreshManual: false,
 
   select: (query, label) => {
     // Remember the selection so the "open on startup: last view" preference
@@ -414,6 +447,41 @@ export const useUi = create<UiState>((set, get) => ({
     set((s) => ({ aiSummaryRequest: s.aiSummaryRequest + 1 })),
   setModalOpen: (modalOpen) => set({ modalOpen }),
   setMenuOpen: (menuOpen) => set({ menuOpen }),
+
+  beginManualRefresh: () => set({ refreshManual: true }),
+  endManualRefresh: () => set({ refreshManual: false }),
+  applyRefreshEvent: (e) =>
+    set((s) => {
+      switch (e.event) {
+        case "started":
+          // A `started` with no sources is a scheduler tick that found nothing
+          // due. It is not a run, so it must not light the UI — otherwise the
+          // progress bar flashes once a minute, all night.
+          if (e.data.total === 0) return s;
+          return {
+            refresh: { total: e.data.total, done: 0, inFlight: [], failed: 0 },
+          };
+        case "feedStart":
+          if (!s.refresh) return s;
+          return {
+            refresh: { ...s.refresh, inFlight: [...s.refresh.inFlight, e.data.feedId] },
+          };
+        case "feedDone": {
+          if (!s.refresh) return s;
+          const { feedId, error } = e.data;
+          return {
+            refresh: {
+              ...s.refresh,
+              done: s.refresh.done + 1,
+              inFlight: s.refresh.inFlight.filter((id) => id !== feedId),
+              failed: s.refresh.failed + (error ? 1 : 0),
+            },
+          };
+        }
+        case "finished":
+          return { refresh: null };
+      }
+    }),
 }));
 
 // Seed the backend's appearance copy on startup so an existing install — whose

@@ -4,9 +4,10 @@
 //! new articles, and runs retention cleanup. Progress is reported through an
 //! `on_event` callback so callers can render it however they like.
 //!
-//! The desktop app wraps [`refresh_core`] with a Tauri progress channel,
-//! notifications and tray updates (see `papr_lib::scheduler`); the agent CLI
-//! drives it directly, forwarding events to stderr.
+//! The desktop app wraps [`refresh_core`] with the Tauri plumbing (a
+//! `refresh-progress` event, notifications, tray updates — see
+//! `papr_lib::scheduler`); the agent CLI drives it directly, forwarding events
+//! to stderr.
 
 use crate::db;
 use crate::error::AppResult;
@@ -14,7 +15,7 @@ use crate::ingestion::{fetch, parse};
 use crate::models::{RefreshProgress, SourceType};
 use rusqlite::Connection;
 use std::sync::Arc;
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{mpsc, Mutex, Semaphore};
 use tokio::task::JoinSet;
 
 /// Outcome of a [`refresh_core`] run.
@@ -154,14 +155,23 @@ pub async fn refresh_core(
     on_event(RefreshProgress::Started { total: feeds.len() });
 
     let sem = Arc::new(Semaphore::new(concurrency));
+    // `on_event` is a plain `FnMut` and cannot be moved into the spawned tasks,
+    // so a task hands its start over this channel and the main loop drains it
+    // below — enough to keep the per-source event order the UI needs.
+    let (starts_tx, mut starts_rx) = mpsc::unbounded_channel();
     // The feed URL travels back out alongside the outcome — `refine_source_type`
     // needs it for the Mastodon `/@user.rss` pattern check below.
     let mut set: JoinSet<(i64, String, Outcome)> = JoinSet::new();
     for (id, url, etag, last_modified) in feeds {
         let client = client.clone();
         let sem = sem.clone();
+        let starts_tx = starts_tx.clone();
         set.spawn(async move {
             let _permit = sem.acquire().await;
+            // Only once the permit is held is this source really being fetched:
+            // every task is spawned up front, so reporting earlier would light
+            // up the whole list at once instead of a few rows at a time.
+            let _ = starts_tx.send(RefreshProgress::FeedStart { feed_id: id });
             let outcome = fetch_one(&client, &url, etag, last_modified).await;
             (id, url, outcome)
         });
@@ -222,6 +232,13 @@ pub async fn refresh_core(
             new_articles: new_here,
             error,
         });
+
+        // Drain the starts queued while this source was being ingested. A
+        // source's own start always precedes its `FeedDone` (the task sends it
+        // before fetching), so no `select!` is needed to keep that order.
+        while let Ok(started) = starts_rx.try_recv() {
+            on_event(started);
+        }
     }
 
     // Retention: drop old read articles when a finite window is configured. The

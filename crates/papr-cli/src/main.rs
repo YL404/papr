@@ -867,6 +867,9 @@ async fn cmd_refresh(
         use papr_core::models::RefreshProgress::*;
         match event {
             Started { total } => eprintln!("refreshing {total} feed(s)…"),
+            // Per-source detail: the CLI logs outcomes, and a start line per
+            // source would double the noise of a full refresh for no gain.
+            FeedStart { .. } => {}
             FeedDone { feed_id, new_articles, error } => {
                 if let Some(e) = error {
                     eprintln!("  feed {feed_id}: error — {e}");

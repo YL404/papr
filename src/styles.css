@@ -850,6 +850,7 @@ button { font-family: inherit; }
   align-items: center;
   gap: 4px;
   background: var(--panel);
+  position: relative;
 }
 .sb-footer button {
   width: 28px; height: 28px;
@@ -862,6 +863,48 @@ button { font-family: inherit; }
 }
 .sb-footer button:hover { background: var(--hover); color: var(--ink-2); }
 .sb-footer .spacer { flex: 1; }
+
+/* Feed-refresh progress. The bar rides the footer's own top edge, so a run
+   fills the divider in place rather than adding a row to the sidebar; the
+   counter sits in the footer's slack and degrades to an ellipsis on a narrow
+   sidebar (the label stays on the refresh button's tooltip). */
+.sb-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 2px;
+  background: var(--accent);
+  transition: width .2s ease;
+}
+.sb-refresh-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sb-refresh-failed { color: var(--warn); }
+/* Per-source "being fetched now" marker, on the feed row and the folder row. */
+.sb-busy {
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--accent);
+}
+/* Reduce-motion flattens the spin to a single frame, which reads as a stuck
+   icon — swap it for a plain dot so the bar stays the only moving part. */
+:root[data-reduce-motion="true"] .sb-busy svg { display: none; }
+:root[data-reduce-motion="true"] .sb-busy::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+}
 
 /* Drag-sort */
 .sb-item.dragging { opacity: 0.4; }

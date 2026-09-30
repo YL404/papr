@@ -2,9 +2,10 @@
 //! [`papr_core::ingestion::refresh::refresh_core`].
 //!
 //! `refresh_all` adds what only the desktop app needs — single-flight locking,
-//! a progress channel to the webview, new-article notifications, FreshRSS sync
-//! and tray/badge updates — while the actual fetch/parse/ingest pipeline lives
-//! in `papr-core` so the agent CLI can drive the same code headlessly.
+//! a `refresh-progress` event for the webview, new-article notifications,
+//! FreshRSS sync and tray/badge updates — while the actual fetch/parse/ingest
+//! pipeline lives in `papr-core` so the agent CLI can drive the same code
+//! headlessly.
 
 use crate::error::AppResult;
 use crate::ingestion::refresh;
@@ -12,19 +13,22 @@ use crate::models::RefreshProgress;
 use crate::state::AppState;
 use crate::{notify, tray};
 use std::time::Duration;
-use tauri::{ipc::Channel, AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 // Re-exported so existing callers (`commands`, `tray`) keep referring to
 // `scheduler::RefreshScope`.
 pub use refresh::RefreshScope;
 
-/// Refresh feeds selected by `scope`, streaming per-feed progress over
-/// `progress` when provided, then running the desktop-only tail: emit
+/// Refresh feeds selected by `scope`, reporting progress to the webview as a
+/// `refresh-progress` event, then running the desktop-only tail: emit
 /// `feeds-updated`, notify, and refresh the tray. Returns the new-article
 /// count.
+///
+/// Progress is an app event rather than a per-call channel so that every
+/// trigger — this scheduler, the manual command, the tray, OPML import —
+/// reports through one stream the frontend can listen to once.
 pub async fn refresh_all(
     app: &AppHandle,
-    progress: Option<Channel<RefreshProgress>>,
     wait_if_busy: bool,
     scope: RefreshScope,
 ) -> AppResult<usize> {
@@ -41,22 +45,29 @@ pub async fn refresh_all(
             Ok(guard) => guard,
             Err(_) => {
                 log::debug!("refresh already in progress; skipping this run");
-                if let Some(p) = &progress {
-                    let _ = p.send(RefreshProgress::Started { total: 0 });
-                    let _ = p.send(RefreshProgress::Finished { new_articles: 0 });
-                }
                 return Ok(0);
             }
         }
     };
 
     let client = state.http();
-    let summary = refresh::refresh_core(&state.db, &client, scope, |event| {
-        if let Some(p) = &progress {
-            let _ = p.send(event);
-        }
+    let summary = match refresh::refresh_core(&state.db, &client, scope, |event| {
+        let _ = app.emit("refresh-progress", event);
     })
-    .await?;
+    .await
+    {
+        Ok(summary) => summary,
+        Err(e) => {
+            // The frontend's progress bar only clears on `finished`, so a run
+            // that dies mid-flight has to close itself out or it would spin
+            // for the rest of the session.
+            let _ = app.emit(
+                "refresh-progress",
+                RefreshProgress::Finished { new_articles: 0 },
+            );
+            return Err(e);
+        }
+    };
 
     // Background scheduler with nothing due this cycle: bow out before the
     // heavier tail (notifications, tray) so an idle tick is genuinely idle.
@@ -85,7 +96,7 @@ pub fn spawn_scheduler(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         tokio::time::sleep(Duration::from_secs(8)).await;
         loop {
-            if let Err(e) = refresh_all(&app, None, false, RefreshScope::Due).await {
+            if let Err(e) = refresh_all(&app, false, RefreshScope::Due).await {
                 log::warn!("scheduled refresh failed: {e}");
             }
             tokio::time::sleep(SCHEDULER_TICK).await;

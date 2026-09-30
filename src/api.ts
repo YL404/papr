@@ -11,7 +11,6 @@ import type {
   DiscoveryResult,
   Feed,
   Folder,
-  RefreshProgress,
   SmartCounts,
   Tag,
   TranslateEvent,
@@ -68,21 +67,18 @@ export const setFeedOpenMode = (
   mode: "reader" | "extracted" | "web" | null,
 ) => invoke<void>("set_feed_open_mode", { id, mode });
 
-/** Refresh feeds, reporting progress through the supplied callback. With no
- *  `scope` this refreshes every feed; pass `{ feedId }` for a single feed or
- *  `{ folderId }` for every feed in one folder. */
-export function refreshFeeds(
-  onProgress?: (p: RefreshProgress) => void,
-  scope?: { feedId?: number; folderId?: number },
-): Promise<number> {
-  const channel = new Channel<RefreshProgress>();
-  if (onProgress) channel.onmessage = onProgress;
-  return invoke<number>("refresh_feeds", {
-    onProgress: channel,
+/** Refresh feeds, returning the new-article count. With no `scope` this
+ *  refreshes every feed; pass `{ feedId }` for a single feed or `{ folderId }`
+ *  for every feed in one folder.
+ *
+ *  Progress does not come back through this promise: the backend streams it to
+ *  every trigger (this command, the scheduler tick, the tray) as a single
+ *  `refresh-progress` event, so the UI has one place to listen. */
+export const refreshFeeds = (scope?: { feedId?: number; folderId?: number }) =>
+  invoke<number>("refresh_feeds", {
     feedId: scope?.feedId ?? null,
     folderId: scope?.folderId ?? null,
   });
-}
 
 // ── articles ──
 export const listArticles = (

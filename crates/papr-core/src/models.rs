@@ -158,7 +158,7 @@ pub enum ArticleQuery {
     Tag(i64),
 }
 
-/// Live progress for a refresh run, streamed to the frontend over an ipc::Channel.
+/// Live progress for a refresh run, reported to the caller as it happens.
 //
 // `rename_all_fields` is required in addition to `rename_all`: the latter only
 // camelCases the variant names, not the fields inside struct variants — so
@@ -173,6 +173,10 @@ pub enum ArticleQuery {
 )]
 pub enum RefreshProgress {
     Started { total: usize },
+    /// A source has acquired a fetch slot and is being fetched *now*. A set,
+    /// not a single source: the pipeline runs `net_concurrency` (default 6, up
+    /// to 16) at a time, so several of these are outstanding at any moment.
+    FeedStart { feed_id: i64 },
     FeedDone { feed_id: i64, new_articles: usize, error: Option<String> },
     Finished { new_articles: usize },
 }

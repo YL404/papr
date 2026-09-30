@@ -345,11 +345,11 @@ pub async fn rename_feed(state: State<'_, AppState>, id: i64, title: String) -> 
     db::rename_feed(&conn, id, &title)
 }
 
-/// Refresh every feed, streaming progress to the frontend over `on_progress`.
+/// Refresh every feed. Progress reaches the webview as a `refresh-progress`
+/// event (see `scheduler::refresh_all`), not a channel bound to this call.
 #[tauri::command]
 pub async fn refresh_feeds(
     app: AppHandle,
-    on_progress: Channel<RefreshProgress>,
     feed_id: Option<i64>,
     folder_id: Option<i64>,
 ) -> AppResult<usize> {
@@ -360,7 +360,7 @@ pub async fn refresh_feeds(
         (_, Some(id)) => scheduler::RefreshScope::Folder(id),
         _ => scheduler::RefreshScope::All,
     };
-    scheduler::refresh_all(&app, Some(on_progress), false, scope).await
+    scheduler::refresh_all(&app, false, scope).await
 }
 
 // ─────────────────────────── articles ───────────────────────────
@@ -626,8 +626,7 @@ pub async fn import_opml(app: AppHandle, content: String) -> AppResult<usize> {
     // skipping and leaving the imported feeds empty until the next tick.
     let app2 = app.clone();
     tauri::async_runtime::spawn(async move {
-        let _ =
-            scheduler::refresh_all(&app2, None, true, scheduler::RefreshScope::All).await;
+        let _ = scheduler::refresh_all(&app2, true, scheduler::RefreshScope::All).await;
     });
     Ok(count)
 }

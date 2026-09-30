@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQueryClient } from "@tanstack/react-query";
 import { invoke } from "@tauri-apps/api/core";
@@ -14,7 +14,7 @@ import type { Palette, ResolvedMode } from "./store";
 import { useArticleActions } from "./hooks/articleActions";
 import { readCurrentItems } from "./lib/currentList";
 import { useToasts, toast as toastApi, reportError } from "./toast";
-import type { ArticleQuery, ArticleSummary, Feed } from "./types";
+import type { ArticleQuery, ArticleSummary, Feed, RefreshProgress } from "./types";
 import Sidebar from "./components/Sidebar";
 import ArticleList from "./components/ArticleList";
 import Reader from "./components/Reader";
@@ -82,7 +82,6 @@ export default function App() {
 
   const activeToast = useToasts((s) => s.current);
   const dismissToast = useToasts((s) => s.dismiss);
-  const [refreshing, setRefreshing] = useState(false);
   const [cpOpen, setCpOpen] = useState(false);
   const [settings, setSettings] = useState<{ open: boolean; section?: string }>({
     open: false,
@@ -229,6 +228,18 @@ export default function App() {
     };
   }, [qc]);
 
+  // One listener for every refresh the app runs — the manual command, the
+  // periodic scheduler, the tray, OPML import — since the backend reports them
+  // all as app events rather than down the caller's own channel.
+  useEffect(() => {
+    const un = listen<RefreshProgress>("refresh-progress", (e) =>
+      useUi.getState().applyRefreshEvent(e.payload),
+    );
+    return () => {
+      un.then((f) => f());
+    };
+  }, []);
+
   // ── "Settings…" from the menu-bar tray ──
   useEffect(() => {
     const un = listen("tray-open-settings", () => setSettings({ open: true }));
@@ -237,37 +248,32 @@ export default function App() {
     };
   }, []);
 
-  // A ref — not the `refreshing` state — is the concurrency guard: it must be
+  // A store read — not React state — is the concurrency guard: it has to be
   // read-and-set synchronously, and the kick-off has side effects (a network
-  // refresh, a toast). A setState updater must stay pure; React invokes it
-  // twice under StrictMode, which previously fired the refresh twice in dev.
-  // `refreshing` state is kept purely to drive the sidebar spinner.
-  const refreshingRef = useRef(false);
+  // refresh). A setState updater must stay pure; React invokes it twice under
+  // StrictMode, which previously fired the refresh twice in dev.
+  //
+  // It guards on *any* run, not just the user's own: refreshes are single-flight
+  // on the backend, so a second request would be dropped and report a
+  // misleading "up to date".
   const doRefresh = useCallback((scope?: { feedId?: number; folderId?: number }) => {
-    if (refreshingRef.current) return;
-    refreshingRef.current = true;
-    setRefreshing(true);
-    showToast(
-      scope?.feedId != null
-        ? t("app.refreshingFeed")
-        : scope?.folderId != null
-          ? t("app.refreshingFolder")
-          : t("app.refreshing"),
-    );
+    const ui = useUi.getState();
+    if (ui.refresh || ui.refreshManual) return;
+    ui.beginManualRefresh();
     api
-      .refreshFeeds(undefined, scope)
+      .refreshFeeds(scope)
       .then((n) => {
         // Refresh only the caches a feed fetch can actually change — a bare
         // `invalidateQueries()` would also refetch unrelated queries (tags,
         // FreshRSS status, the open feed-discovery search).
         actions.refreshAfterFetch();
-        showToast(n > 0 ? t("app.foundNew", { count: n }) : t("app.upToDate"));
+        // A run still in flight means ours was dropped as a duplicate rather
+        // than having found nothing, so don't claim the library is up to date.
+        if (n > 0) showToast(t("app.foundNew", { count: n }));
+        else if (!useUi.getState().refresh) showToast(t("app.upToDate"));
       })
       .catch(reportError)
-      .finally(() => {
-        refreshingRef.current = false;
-        setRefreshing(false);
-      });
+      .finally(() => useUi.getState().endManualRefresh());
   }, [actions, showToast, t]);
 
   const markAllRead = useCallback(async () => {
@@ -464,7 +470,6 @@ export default function App() {
             onOpenSettings={openSettings}
             onSearchClick={() => setCpOpen(true)}
             onRefresh={doRefresh}
-            refreshing={refreshing}
             onToast={showToast}
           />
           <ArticleList onToast={showToast} />

@@ -20,7 +20,6 @@ interface Props {
   /** Refresh feeds. With no scope refreshes everything (the toolbar button);
    *  pass `{ feedId }` or `{ folderId }` for the per-source context menus. */
   onRefresh: (scope?: { feedId?: number; folderId?: number }) => void;
-  refreshing: boolean;
   onToast: (msg: string) => void;
 }
 
@@ -84,7 +83,6 @@ export default function Sidebar({
   onOpenSettings,
   onSearchClick,
   onRefresh,
-  refreshing,
   onToast,
 }: Props) {
   const { t } = useTranslation();
@@ -95,6 +93,13 @@ export default function Sidebar({
   const showCounts = useUi((s) => s.prefs.showSidebarCounts);
   const unreadOnly = useUi((s) => s.prefs.sidebarUnreadOnly);
   const setPref = useUi((s) => s.setPref);
+  // The whole refresh slice, not just `inFlight`: the footer bar needs the
+  // counts, and a subscription is per-component either way.
+  const refresh = useUi((s) => s.refresh);
+  const refreshManual = useUi((s) => s.refreshManual);
+  // A run the user did not ask for still has to show as busy — a second
+  // request would be dropped by the backend's single-flight lock.
+  const busy = refresh != null || refreshManual;
 
   const feeds = useQuery({ queryKey: ["feeds"], queryFn: api.listFeeds });
   const folders = useQuery({ queryKey: ["folders"], queryFn: api.listFolders });
@@ -517,12 +522,20 @@ export default function Sidebar({
         setMenu({ x: e.clientX, y: e.clientY, kind: "feed", feed: f });
       }}
       title={f.fetchError ?? f.title}
+      aria-busy={refresh?.inFlight.includes(f.id) || undefined}
     >
       <FeedAvatar title={f.title} faviconUrl={f.faviconUrl} seed={f.id} />
       <span className="sb-label">{f.title}</span>
       {f.fetchError && (
         <span className="sb-warn" role="img" aria-label={t("sidebar.feedError")}>
           !
+        </span>
+      )}
+      {/* Being fetched right now. The row itself carries `aria-busy`, so the
+          glyph is decoration — the footer bar is the announced progress. */}
+      {refresh?.inFlight.includes(f.id) && (
+        <span className="sb-busy" aria-hidden="true">
+          <Icon name="refresh" size={10} className="spinning" />
         </span>
       )}
       {showCounts && f.unreadCount > 0 && (
@@ -683,6 +696,11 @@ export default function Sidebar({
           // per-feed badges already carry the same signal and a header total
           // would just duplicate them.
           const folderUnread = inFolder.reduce((n, f) => n + f.unreadCount, 0);
+          // A folder is busy while any of its sources is being fetched, which
+          // is also what a folder-scoped refresh looks like from out here.
+          const folderBusy =
+            refresh != null &&
+            refresh.inFlight.some((id) => inFolder.some((f) => f.id === id));
           return (
             <div
               key={folder.id}
@@ -732,6 +750,11 @@ export default function Sidebar({
                   <Icon name="chevron-down" size={11} />
                 </button>
                 <span className="sb-folder-name">{folder.name}</span>
+                {folderBusy && (
+                  <span className="sb-busy" aria-hidden="true">
+                    <Icon name="refresh" size={10} className="spinning" />
+                  </span>
+                )}
                 {showCounts && (isCollapsed || folderActive) && folderUnread > 0 && (
                   <span className="sb-count">{folderUnread}</span>
                 )}
@@ -813,6 +836,21 @@ export default function Sidebar({
       </div>
 
       <div className="sb-footer">
+        {/* A run's progress rides the footer's own top edge, so it fills the
+            divider in place instead of adding a row to the sidebar. */}
+        {refresh && (
+          <div
+            className="sb-progress"
+            role="progressbar"
+            aria-label={refreshManual ? t("app.refreshing") : t("app.refreshingAuto")}
+            aria-valuemin={0}
+            aria-valuemax={refresh.total}
+            aria-valuenow={refresh.done}
+            style={{
+              width: `${refresh.total > 0 ? (refresh.done / refresh.total) * 100 : 0}%`,
+            }}
+          />
+        )}
         <button
           title={t("sidebar.addFeedShortcut")}
           aria-label={t("sidebar.addFeedShortcut")}
@@ -821,15 +859,34 @@ export default function Sidebar({
           <Icon name="plus" size={14} />
         </button>
         <button
-          title={t("sidebar.refreshAll")}
+          title={busy
+            ? refreshManual
+              ? t("app.refreshing")
+              : t("app.refreshingAuto")
+            : t("sidebar.refreshAll")}
           aria-label={t("sidebar.refreshAll")}
           onClick={() => onRefresh()}
-          disabled={refreshing}
-          className={refreshing ? "spinning" : ""}
+          disabled={busy}
+          className={busy ? "spinning" : ""}
         >
           <Icon name="refresh" size={14} />
         </button>
         <div className="spacer" />
+        {refresh && (
+          <span className="sb-refresh-status">
+            {refreshManual
+              ? t("app.refreshingCount", { done: refresh.done, total: refresh.total })
+              : t("app.refreshingAutoCount", {
+                  done: refresh.done,
+                  total: refresh.total,
+                })}
+            {refresh.failed > 0 && (
+              <span className="sb-refresh-failed">
+                {t("app.refreshingFailed", { count: refresh.failed })}
+              </span>
+            )}
+          </span>
+        )}
         <button
           title={t("sidebar.settings")}
           aria-label={t("sidebar.settings")}

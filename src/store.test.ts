@@ -61,3 +61,59 @@ describe("wide mode persistence", () => {
     expect(relaunched.getState().wide).toBe(false);
   });
 });
+
+// A refresh is driven entirely by the backend's `refresh-progress` stream, and
+// the sidebar renders straight off this state — so the accounting (and the idle
+// tick that must *not* light the UI) is worth pinning down.
+describe("refresh progress", () => {
+  const started = (total: number) => ({ event: "started", data: { total } }) as const;
+  const feedStart = (feedId: number) => ({ event: "feedStart", data: { feedId } }) as const;
+  const feedDone = (feedId: number, error: string | null = null) =>
+    ({ event: "feedDone", data: { feedId, newArticles: 0, error } }) as const;
+  const finished = { event: "finished", data: { newArticles: 0 } } as const;
+
+  it("tracks in-flight sources and the done count", async () => {
+    const useUi = await freshStore();
+    useUi.getState().applyRefreshEvent(started(3));
+    expect(useUi.getState().refresh).toEqual({
+      total: 3,
+      done: 0,
+      inFlight: [],
+      failed: 0,
+    });
+
+    useUi.getState().applyRefreshEvent(feedStart(7));
+    useUi.getState().applyRefreshEvent(feedStart(9));
+    expect(useUi.getState().refresh?.inFlight).toEqual([7, 9]);
+
+    useUi.getState().applyRefreshEvent(feedDone(7));
+    expect(useUi.getState().refresh).toMatchObject({ done: 1, inFlight: [9] });
+
+    useUi.getState().applyRefreshEvent(finished);
+    expect(useUi.getState().refresh).toBeNull();
+  });
+
+  it("counts sources that failed", async () => {
+    const useUi = await freshStore();
+    useUi.getState().applyRefreshEvent(started(2));
+    useUi.getState().applyRefreshEvent(feedDone(1, "boom"));
+    useUi.getState().applyRefreshEvent(feedDone(2));
+    expect(useUi.getState().refresh).toMatchObject({ done: 2, failed: 1 });
+  });
+
+  it("ignores an idle scheduler tick", async () => {
+    // A `Due` run with nothing due reports total 0 — a real event pair, but no
+    // fetch ran, so the progress bar must stay dark instead of flashing once a
+    // minute.
+    const useUi = await freshStore();
+    useUi.getState().applyRefreshEvent(started(0));
+    expect(useUi.getState().refresh).toBeNull();
+  });
+
+  it("ignores per-source events that arrive with no run", async () => {
+    const useUi = await freshStore();
+    useUi.getState().applyRefreshEvent(feedStart(1));
+    useUi.getState().applyRefreshEvent(feedDone(1));
+    expect(useUi.getState().refresh).toBeNull();
+  });
+});
