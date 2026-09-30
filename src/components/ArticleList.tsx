@@ -384,6 +384,10 @@ export default function ArticleList({ onToast }: Props) {
     const sig = `${JSON.stringify(query)}|${unreadOnly}|${sortOldest}|${listAnchor}`;
     const sigChanged = markSigRef.current !== sig;
     if (sigChanged) markSigRef.current = sig;
+    // Switching to a different list cancels its pending marks: the rows they
+    // refer to belong to the previous view, and navigating away takes the
+    // scroll-back-and-cancel window with them.
+    if (sigChanged) dropAllPending();
 
     if (!range || items.length === 0) {
       prevVisibleRef.current = new Map();
