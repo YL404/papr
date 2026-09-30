@@ -226,19 +226,21 @@ pub async fn refresh_core(
             }
         }
 
+        // Drain queued starts *before* this source's done goes out. A task
+        // sends its start before fetching, so each start is either still
+        // queued here or was already drained on an earlier iteration — either
+        // way it precedes the done, which is the order the UI's in-flight
+        // accounting relies on.
+        while let Ok(started) = starts_rx.try_recv() {
+            on_event(started);
+        }
+
         total_new += new_here;
         on_event(RefreshProgress::FeedDone {
             feed_id,
             new_articles: new_here,
             error,
         });
-
-        // Drain the starts queued while this source was being ingested. A
-        // source's own start always precedes its `FeedDone` (the task sends it
-        // before fetching), so no `select!` is needed to keep that order.
-        while let Ok(started) = starts_rx.try_recv() {
-            on_event(started);
-        }
     }
 
     // Retention: drop old read articles when a finite window is configured. The
@@ -271,4 +273,77 @@ pub async fn refresh_core(
         new_articles: total_new,
         ran: true,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Serve `body` to every request on a loopback port and return the base
+    /// URL — enough HTTP for `fetch_one` in a test, no mock-server dependency.
+    fn serve(body: &'static [u8]) -> String {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        std::thread::spawn(move || {
+            for stream in listener.incoming() {
+                let mut stream = stream.unwrap();
+                let mut buf = [0u8; 1024];
+                let _ = std::io::Read::read(&mut stream, &mut buf);
+                let head = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Type: application/rss+xml\r\n\
+                     Content-Length: {}\r\nConnection: close\r\n\r\n",
+                    body.len()
+                );
+                let _ = std::io::Write::write_all(&mut stream, head.as_bytes());
+                let _ = std::io::Write::write_all(&mut stream, body);
+            }
+        });
+        format!("http://{addr}/feed.xml")
+    }
+
+    const RSS: &[u8] = br#"<?xml version="1.0"?>
+        <rss version="2.0"><channel><title>Test</title>
+          <item><title>One</title></item>
+          <item><title>Two</title></item>
+        </channel></rss>"#;
+
+    /// A source's `FeedStart` must precede its own `FeedDone`: the UI marks a
+    /// row in-flight on the start and clears it on the done, so an inverted
+    /// pair would leave the row spinning for the rest of the run.
+    #[tokio::test]
+    async fn feed_start_precedes_its_feed_done() {
+        let base = serve(RSS);
+        let conn = crate::db::tests::test_conn();
+        let id_a =
+            db::insert_feed(&conn, &format!("{base}a.xml"), None, "A", None, SourceType::Rss, None)
+                .unwrap();
+        let id_b =
+            db::insert_feed(&conn, &format!("{base}b.xml"), None, "B", None, SourceType::Rss, None)
+                .unwrap();
+        let db = Mutex::new(conn);
+
+        let events: Arc<std::sync::Mutex<Vec<RefreshProgress>>> = Arc::default();
+        let sink = events.clone();
+        let summary = refresh_core(&db, &reqwest::Client::new(), RefreshScope::All, move |e| {
+            sink.lock().unwrap().push(e);
+        })
+        .await
+        .unwrap();
+        assert_eq!(summary.new_articles, 4);
+
+        let ev = events.lock().unwrap();
+        assert!(matches!(ev.first(), Some(RefreshProgress::Started { total: 2 })));
+        assert!(matches!(ev.last(), Some(RefreshProgress::Finished { .. })));
+        for id in [id_a, id_b] {
+            let start = ev
+                .iter()
+                .position(|e| matches!(e, RefreshProgress::FeedStart { feed_id } if *feed_id == id))
+                .unwrap_or_else(|| panic!("no FeedStart for feed {id}"));
+            let done = ev
+                .iter()
+                .position(|e| matches!(e, RefreshProgress::FeedDone { feed_id, .. } if *feed_id == id))
+                .unwrap_or_else(|| panic!("no FeedDone for feed {id}"));
+            assert!(start < done, "FeedStart({id}) must precede FeedDone({id})");
+        }
+    }
 }

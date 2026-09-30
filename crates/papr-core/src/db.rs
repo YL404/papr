@@ -1701,19 +1701,29 @@ pub fn latest_fetch(conn: &Connection) -> AppResult<Option<String>> {
     })?)
 }
 
+// `pub(crate)` only so other modules' tests (the refresh event-ordering test)
+// can reach `test_conn`; everything else in here stays private to this module.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
-    /// An in-memory database with all migrations applied and one feed +
-    /// article inserted. Returns `(conn, article_id)`.
-    fn test_db() -> (Connection, i64) {
+    /// A bare in-memory connection with migrations and the custom SQL
+    /// functions applied — shared with tests in other modules (the refresh
+    /// event-ordering test) that need a real database but no seeded content.
+    pub(crate) fn test_conn() -> Connection {
         let mut conn = Connection::open_in_memory().unwrap();
         conn.pragma_update(None, "foreign_keys", "ON").unwrap();
         MIGRATIONS.to_latest(&mut conn).unwrap();
         // The production `open` / `open_reader` register custom SQL functions;
         // the in-memory test connection must too so `unicode_lower` resolves.
         register_functions(&conn).unwrap();
+        conn
+    }
+
+    /// An in-memory database with all migrations applied and one feed +
+    /// article inserted. Returns `(conn, article_id)`.
+    fn test_db() -> (Connection, i64) {
+        let conn = test_conn();
         let feed_id = insert_feed(
             &conn,
             "https://example.com/feed.xml",
