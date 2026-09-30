@@ -102,9 +102,10 @@ describe("refresh progress", () => {
   });
 
   it("ignores an idle scheduler tick", async () => {
-    // A `Due` run with nothing due reports total 0 — a real event pair, but no
-    // fetch ran, so the progress bar must stay dark instead of flashing once a
-    // minute.
+    // The backend bows out of a `Due` run with nothing due without reporting
+    // (refresh.rs), so this pair should never arrive — but a `started` with
+    // no sources must never light the UI regardless, so the store stays
+    // defensive.
     const useUi = await freshStore();
     useUi.getState().applyRefreshEvent(started(0));
     expect(useUi.getState().refresh).toBeNull();

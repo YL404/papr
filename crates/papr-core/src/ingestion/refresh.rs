@@ -141,11 +141,11 @@ pub async fn refresh_core(
         (feeds, concurrency, dedup)
     };
 
-    // Nothing due this cycle: emit a no-op Started/Finished and bow out before
-    // the heavier tail. The manual refresh (scope All) always runs the pipeline.
+    // Nothing due this cycle: bow out before the heavier tail without reporting
+    // — the scheduler fires this path every tick, and a no-op event pair would
+    // make every event consumer guard against an empty run. The manual refresh
+    // (scope All) always runs the pipeline.
     if scope == RefreshScope::Due && feeds.is_empty() {
-        on_event(RefreshProgress::Started { total: 0 });
-        on_event(RefreshProgress::Finished { new_articles: 0 });
         return Ok(RefreshSummary {
             new_articles: 0,
             ran: false,
