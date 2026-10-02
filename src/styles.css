@@ -2658,15 +2658,13 @@ button { font-family: inherit; }
   transform: translateZ(0);
 }
 .article-body img {
-  /* Width cap too: a landscape image otherwise always fills the full column,
-     which dwarfs the surrounding text even though its height stays legal. */
-  max-width: 85%;
-  /* Cap portrait images too (phone screenshots, manga strips): `height: auto`
-     alone lets one scale to the full column width and push pages of text
-     below the fold. max-width + max-height resolve through the CSS constraint
-     table, so the aspect ratio is preserved and the image shrinks to whichever
-     limit binds; the lightbox (click) still shows it full size. */
-  max-height: 70vh;
+  /* Original size first: the only shrink is "must fit the column" — no
+     artificial width/height caps. A landscape image therefore fills the
+     column again (undoing the old 85% cap), and a portrait phone screenshot
+     keeps its full proportional height instead of being crushed to 70vh;
+     the wide toggle (1360px column) shows most images 1:1. Smaller images
+     were and stay untouched, and the lightbox (click) still shows full size. */
+  max-width: 100%;
   height: auto;
   border-radius: 8px;
   margin: 1.2em auto;
