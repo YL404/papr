@@ -1176,6 +1176,43 @@ button { font-family: inherit; }
   background: var(--reader);
 }
 
+/* Compact docked title: as the headline scrolls under the toolbar, a small
+   centered copy of it fades in right below (styles above are the p=0 rest
+   state; `updateMiniTitle` drives opacity/transform from scroll). The
+   gradient backdrop — opaque behind the text, fading over the lower 12px —
+   lets body text dissolve as it slides beneath the strip, so no hairline is
+   needed between the strip and the content. `z-index` keeps it under the
+   toolbar's own (opaque, scrolled) background while it rises into place. */
+.mini-title {
+  position: absolute;
+  top: 38px;
+  left: 0;
+  right: 0;
+  height: 38px;
+  padding: 9px 72px 0;
+  display: flex;
+  justify-content: center;
+  background: linear-gradient(to bottom, var(--reader) 26px, transparent);
+  opacity: 0;
+  transform: translateY(-8px);
+  pointer-events: none;
+  z-index: 1;
+}
+.mini-title span {
+  /* min-width: 0 — a flex item's automatic minimum is min-content, which for
+     a nowrap title is the full text, so ellipsis would never engage. */
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 15px;
+  color: var(--ink);
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
 /* Reading progress, after claude.dev's blog: the toolbar carries a block bar —
    ▓ read over ░ to go, zero-padded pct. Hidden in webview mode (the native
    page view has no DOM scroll to measure). A hairline twin at the toolbar's

@@ -220,6 +220,9 @@ export default function Reader({ onToast }: Props) {
   } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  // Compact docked title strip below the toolbar — see `updateMiniTitle`.
+  const miniRef = useRef<HTMLDivElement>(null);
   // Host element the native original-page child webview is positioned over.
   const pageHostRef = useRef<HTMLDivElement>(null);
   // Article id we already auto-marked read via scroll, so a flurry of scroll
@@ -267,6 +270,22 @@ export default function Reader({ onToast }: Props) {
     // replaces the short feed snippet, which keeps the same article id.
   }, [a?.extractedHtml, a?.contentHtml]);
 
+  /** Compact docked title, driven straight from scroll: as the headline slides
+   *  under the toolbar a small centered copy fades in right below the toolbar.
+   *  Opacity and an 8px rise track the headline's exit continuously (fully in
+   *  once its bottom clears 44px), so the reveal follows the gesture and
+   *  reversing the scroll reverses it — no state, no timer. Measured from the
+   *  real `<h1>` because the headline's offset varies with the feed/hero
+   *  layout above it. */
+  const updateMiniTitle = useCallback(() => {
+    const h = titleRef.current;
+    const m = miniRef.current;
+    if (!h || !m) return;
+    const p = Math.max(0, Math.min(1, (44 - h.getBoundingClientRect().bottom) / 64));
+    m.style.opacity = String(p);
+    m.style.transform = `translateY(${((1 - p) * -8).toFixed(2)}px)`;
+  }, []);
+
   // Reset scroll + extraction view on article change.
   useEffect(() => {
     setShowExtracted(useUi.getState().prefs.defaultOpenMode === "extracted");
@@ -281,7 +300,11 @@ export default function Reader({ onToast }: Props) {
     setHeroDataUrl(null);
     scrollMarkedRef.current = null;
     if (scrollRef.current) scrollRef.current.scrollTop = 0;
-  }, [id]);
+    // A cached article re-renders without a skeleton, so the strip survives the
+    // switch carrying the previous article's scroll-driven styles — re-measure
+    // against the now-reset scrollTop instead of waiting for a scroll event.
+    updateMiniTitle();
+  }, [id, updateMiniTitle]);
 
   // Apply the effective open mode once the article (and the feed list) is
   // available — declared after the reset above so it wins the same commit.
@@ -724,6 +747,7 @@ export default function Reader({ onToast }: Props) {
     if (!el) return;
     setScrolled(el.scrollTop > 8);
     updateReadProg();
+    updateMiniTitle();
     markReadIfAtFoot();
   };
 
@@ -737,10 +761,11 @@ export default function Reader({ onToast }: Props) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       updateReadProg();
+      updateMiniTitle();
       markReadIfAtFoot();
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [updateReadProg, markReadIfAtFoot, showExtracted, a?.extractedHtml, a?.contentHtml]);
+  }, [updateReadProg, updateMiniTitle, markReadIfAtFoot, showExtracted, a?.extractedHtml, a?.contentHtml]);
 
   // Progress also moves without a scroll event whenever the body's height
   // changes in place — extract/translation swaps and the wide toggle reflow
@@ -1017,6 +1042,16 @@ export default function Reader({ onToast }: Props) {
         )}
       </div>
 
+      {/* Docked compact title (styles: `.mini-title`). Positioned below the
+          toolbar, over the scroll content; scroll-driven styles come from
+          `updateMiniTitle`. Hidden in web mode — the native page view has no
+          DOM scroll to track, same as `.read-prog`. */}
+      {viewMode === "reader" && (
+        <div className="mini-title" ref={miniRef} aria-hidden="true">
+          <span>{a.title}</span>
+        </div>
+      )}
+
       {viewMode === "web" && a.url ? (
         <div className="reader-webview">
           <div className="reader-webview-bar">
@@ -1069,7 +1104,7 @@ export default function Reader({ onToast }: Props) {
             <Icon name="rss" size={13} />
             {a.feedTitle}
           </button>
-          <h1 className="article-title">{a.title}</h1>
+          <h1 className="article-title" ref={titleRef}>{a.title}</h1>
           <div className="article-meta">
             {a.author && <span className="author">{a.author}</span>}
             {a.author && a.publishedAt && <span>·</span>}
