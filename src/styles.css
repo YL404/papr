@@ -2658,13 +2658,16 @@ button { font-family: inherit; }
   transform: translateZ(0);
 }
 .article-body img {
-  /* Original size first: the only shrink is "must fit the column" — no
-     artificial width/height caps. A landscape image therefore fills the
-     column again (undoing the old 85% cap), and a portrait phone screenshot
-     keeps its full proportional height instead of being crushed to 70vh;
-     the wide toggle (1360px column) shows most images 1:1. Smaller images
-     were and stay untouched, and the lightbox (click) still shows full size. */
+  /* Original size first: the only shrinks are "must fit the column" and the
+     viewport-height cap. Both resolve through the CSS constraint table, so
+     the aspect ratio is preserved and the image scales to whichever limit
+     binds; smaller images are untouched, and the lightbox (click) still
+     shows full size. The height cap matters beyond layout: without it a tall
+     screenshot's composited layer exceeds the GPU texture threshold, gets
+     split into tiles that are dropped far more readily under scroll
+     pressure — the size cap is part of keeping the scroll flicker away. */
   max-width: 100%;
+  max-height: 70vh;
   height: auto;
   border-radius: 8px;
   margin: 1.2em auto;
