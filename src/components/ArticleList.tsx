@@ -17,7 +17,7 @@ import {
   type PendingMark,
 } from "../lib/scrollRead";
 import { reportError, toast } from "../toast";
-import { clampToViewport } from "../lib/viewport";
+
 import type { ArticleSummary, Feed } from "../types";
 import Icon from "./Icon";
 import ContextMenu, { type MenuEntry } from "./ContextMenu";
@@ -26,12 +26,6 @@ const PAGE = 60;
 
 interface Props {
   onToast: (msg: string) => void;
-}
-
-interface Hover {
-  article: ArticleSummary;
-  top: number;
-  left: number;
 }
 
 export default function ArticleList({ onToast }: Props) {
@@ -85,8 +79,6 @@ export default function ArticleList({ onToast }: Props) {
     y: number;
     article: ArticleSummary;
   } | null>(null);
-  const [hover, setHover] = useState<Hover | null>(null);
-  const hoverTimer = useRef<number | undefined>(undefined);
 
   // Offset-anchored, *bidirectional* paging. `pageParam` is the row offset of a
   // page, so any page can be the starting one (`initialPageParam: listAnchor`).
@@ -441,18 +433,6 @@ export default function ArticleList({ onToast }: Props) {
     reveal,
   ]);
 
-  useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
-
-  // Dismiss any hover preview (shown or still pending) when the list contents
-  // change — switching feed/folder/tag, or toggling the unread / sort filters.
-  // The hovered row is unmounted by the re-render without firing `mouseleave`,
-  // so without this the preview lingers over the new list (or a pending timer
-  // fires later and measures a now-detached row, placing the preview at 0,0).
-  useEffect(() => {
-    window.clearTimeout(hoverTimer.current);
-    setHover(null);
-  }, [query, unreadOnly, sortOldest]);
-
   // Jump back to the top of the list whenever the sidebar selection changes.
   // The scroll container stays mounted across the query swap, so without this
   // a new feed/folder/tag opens scrolled to wherever the *previous* list was
@@ -478,32 +458,6 @@ export default function ArticleList({ onToast }: Props) {
     } catch (e) {
       reportError(e);
     }
-  };
-
-  const onHover = (a: ArticleSummary, e: React.MouseEvent) => {
-    if (
-      e.target instanceof Element &&
-      e.target.closest("[data-no-hover-preview]")
-    ) {
-      leaveHover();
-      return;
-    }
-    window.clearTimeout(hoverTimer.current);
-    // Hold the row element, not a rect snapshot: the preview only appears
-    // 650ms later, and the list is scrollable — measuring at hover time would
-    // anchor the preview to where the row *was*, so a scroll during the delay
-    // (a common "scroll, then pause on a row" gesture) leaves it floating over
-    // unrelated rows or off-screen. Re-measure inside the timer instead, when
-    // the preview actually opens, so it tracks the row's live position.
-    const row = e.currentTarget;
-    hoverTimer.current = window.setTimeout(() => {
-      const rect = row.getBoundingClientRect();
-      setHover({ article: a, top: rect.top + 4, left: rect.right + 12 });
-    }, 650);
-  };
-  const leaveHover = () => {
-    window.clearTimeout(hoverTimer.current);
-    setHover(null);
   };
 
   const articleMenu = (a: ArticleSummary): MenuEntry[] => [
@@ -788,8 +742,6 @@ export default function ArticleList({ onToast }: Props) {
                       e.preventDefault();
                       setMenu({ x: e.clientX, y: e.clientY, article: a });
                     }}
-                    onMouseEnter={(e) => onHover(a, e)}
-                    onMouseLeave={leaveHover}
                   >
                     {(viewMode === "card" || viewMode === "small-image") && showCardThumbs && (
                       <CardThumb article={a} />
@@ -808,14 +760,12 @@ export default function ArticleList({ onToast }: Props) {
                           className={`art-translate-status ${
                             rt.error ? "error" : "loading"
                           }`}
-                          data-no-hover-preview
                           title={
                             rt.error || t("articleList.translateStatusLoading")
                           }
                           aria-label={
                             rt.error || t("articleList.translateStatusLoading")
                           }
-                          onMouseEnter={leaveHover}
                         >
                           <Icon
                             name={rt.error ? "alert" : "refresh"}
@@ -855,8 +805,6 @@ export default function ArticleList({ onToast }: Props) {
         )}
         <div style={{ height: 60 }} />
       </div>
-
-      {hover && <HoverPreview {...hover} feedTitle={hover.article.feedTitle} />}
 
       {menu && (
         <ContextMenu
@@ -952,35 +900,6 @@ function CardThumb({ article }: { article: ArticleSummary }) {
           objectFit: "cover",
         }}
       />
-    </div>
-  );
-}
-
-function HoverPreview({
-  article,
-  top,
-  left,
-  feedTitle,
-}: Hover & { feedTitle: string }) {
-  // Clamp the preview inside the viewport. The card is a fixed 340px wide;
-  // the 192px height below pairs with the 8px margin to keep the historical
-  // `innerHeight - 200` bottom pull-back. The shared helper bounds both edges
-  // so a narrow/short window can't shove the preview off the top-left corner.
-  const { left: adjLeft, top: adjTop } = clampToViewport({
-    x: left,
-    y: top,
-    width: 340,
-    height: 192,
-    margin: 8,
-  });
-  return (
-    <div className="hover-preview" style={{ top: adjTop, left: adjLeft }}>
-      <div className="hp-feed">{feedTitle}</div>
-      <div className="hp-title">{article.title}</div>
-      {article.snippet && <div className="hp-body">{article.snippet}</div>}
-      <div className="hp-meta">
-        {[article.author, relTime(article.publishedAt)].filter(Boolean).join(" · ")}
-      </div>
     </div>
   );
 }
