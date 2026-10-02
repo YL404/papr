@@ -411,6 +411,11 @@ export default function Reader({ onToast }: Props) {
     const onError = (e: Event) => void recover(e.currentTarget as HTMLImageElement);
     const watched: HTMLImageElement[] = [];
     el.querySelectorAll("img").forEach((img) => {
+      // Articles stored before the sanitizer began forcing `loading="eager"`
+      // still carry the feed's `loading="lazy"` — flip it here so deferred
+      // images start loading now instead of popping in blank mid-scroll.
+      // Sanitize runs at ingestion, so it never rewrites existing DB rows.
+      img.loading = "eager";
       img.addEventListener("error", onError);
       watched.push(img);
       // Proxy-eligible images (少数派/CDN hosts that reject a bare no-referrer

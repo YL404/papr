@@ -22,7 +22,6 @@ pub fn sanitize(html: &str, base: Option<&str>) -> String {
     let mut builder = Builder::default();
     builder
         .link_rel(Some("noopener noreferrer nofollow"))
-        .add_generic_attributes(["loading"])
         // Allow inline HTML5 video. ammonia's default whitelist drops <video>
         // and <source> entirely, so a feed that embeds a clip with a <video>
         // tag reached the reader as nothing at all. Permit the element plus its
@@ -50,7 +49,15 @@ pub fn sanitize(html: &str, base: Option<&str>) -> String {
         // weaker policy the feed shipped. Hosts that instead *require* a
         // Referer (e.g. `cdnfile.sspai.com`) are covered by the reader's
         // retry-through-backend path — see `commands::fetch_image`.
-        .set_tag_attribute_value("img", "referrerpolicy", "no-referrer");
+        .set_tag_attribute_value("img", "referrerpolicy", "no-referrer")
+        // Force eager loading: the reader renders stored HTML in a scroll pane,
+        // and a feed's `loading="lazy"` makes WKWebView defer each image until
+        // it nears the viewport — the image area flashes blank while scrolling,
+        // and the body keeps growing mid-read (why `updateReadProg` carries a
+        // monotonic clamp). Forcing the value (like `referrerpolicy` above)
+        // also overrides whatever the feed shipped, so `loading` needs no
+        // whitelist entry.
+        .set_tag_attribute_value("img", "loading", "eager");
 
     let parsed_base = base.and_then(|b| Url::parse(b).ok());
     if let Some(b) = parsed_base {
@@ -408,6 +415,15 @@ mod tests {
         );
         assert!(out.contains(r#"referrerpolicy="no-referrer""#), "{out}");
         assert!(!out.contains(r#"referrerpolicy="origin""#), "{out}");
+    }
+
+    #[test]
+    fn sanitize_forces_images_eager() {
+        // A feed's `loading="lazy"` must not reach the reader: deferred images
+        // pop in blank while scrolling and grow the body mid-read.
+        let out = sanitize(r#"<img loading="lazy" src="https://ex.com/a.jpg">"#, None);
+        assert!(out.contains(r#"loading="eager""#), "{out}");
+        assert!(!out.contains("lazy"), "{out}");
     }
 
     #[test]
