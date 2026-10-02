@@ -1192,6 +1192,7 @@ button { font-family: inherit; }
   padding: 9px 72px 0;
   display: flex;
   justify-content: center;
+  gap: 6px;
   background: linear-gradient(to bottom, var(--reader) 26px, transparent);
   opacity: 0;
   transform: translateY(-8px);
@@ -1199,17 +1200,22 @@ button { font-family: inherit; }
   z-index: 1;
 }
 .mini-title span {
-  /* min-width: 0 — a flex item's automatic minimum is min-content, which for
-     a nowrap title is the full text, so ellipsis would never engage. */
-  min-width: 0;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: -0.01em;
   line-height: 15px;
-  color: var(--ink);
-  max-width: 100%;
-  overflow: hidden;
   white-space: nowrap;
+  flex-shrink: 0;
+}
+.mini-title .mini-sep { color: var(--muted-2); font-weight: 400; }
+.mini-title .mini-text {
+  color: var(--ink);
+  /* The one shrinking item — feed name and separator stay whole, the title
+     ellipsizes first. min-width: 0 overrides the flex item's min-content
+     minimum, which for nowrap text is the full string. */
+  flex-shrink: 1;
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
 }
 

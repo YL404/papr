@@ -1048,7 +1048,9 @@ export default function Reader({ onToast }: Props) {
           DOM scroll to track, same as `.read-prog`. */}
       {viewMode === "reader" && (
         <div className="mini-title" ref={miniRef} aria-hidden="true">
-          <span>{a.title}</span>
+          <span className="mini-feed">{a.feedTitle}</span>
+          <span className="mini-sep">·</span>
+          <span className="mini-text">{a.title}</span>
         </div>
       )}
 
