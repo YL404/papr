@@ -2653,6 +2653,9 @@ button { font-family: inherit; }
   display: block;
   margin-left: auto;
   margin-right: auto;
+  /* Same composited-layer promotion as `.article-body img` — the hero is
+     scaled the same way and flashes the same way on scroll-back. */
+  transform: translateZ(0);
 }
 .article-body img {
   /* Width cap too: a landscape image otherwise always fills the full column,
@@ -2669,6 +2672,13 @@ button { font-family: inherit; }
   margin: 1.2em auto;
   display: block;
   cursor: zoom-in;
+  /* Each image on its own composited layer. WKWebView evicts the decoded data
+     of large downscaled images (phone screenshots etc.) under scroll pressure
+     and re-decodes async when their tile re-rasterizes, so the tile paints
+     blank for a frame or two — scaled images flash while scrolling while 1:1
+     ones don't. A dedicated layer keeps the already-scaled raster cached;
+     scrolling only translates it. */
+  transform: translateZ(0);
 }
 
 /* Full-screen image viewer (issue #87) */
