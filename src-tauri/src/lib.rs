@@ -201,6 +201,7 @@ pub fn run() {
             commands::smart_counts,
             commands::extract_fulltext,
             commands::fetch_image,
+            commands::fetch_image_scaled,
             commands::import_opml,
             commands::export_opml,
             commands::get_setting,

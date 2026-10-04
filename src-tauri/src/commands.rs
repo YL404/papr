@@ -563,10 +563,19 @@ pub async fn fetch_image(
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return Err(AppError::code("badImageUrl"));
     }
-    let http = state.http();
+    fetch_image_bytes(state.http(), &url, page_url.as_deref()).await
+}
+
+/// The Referer-fallback fetch loop behind [`fetch_image`], shared with
+/// [`fetch_image_scaled`].
+async fn fetch_image_bytes(
+    http: reqwest::Client,
+    url: &str,
+    page_url: Option<&str>,
+) -> AppResult<Vec<u8>> {
     let mut last_err = AppError::code("badImageUrl");
-    for referer in referer_candidates(&url, page_url.as_deref()) {
-        let mut req = http.get(&url).header("User-Agent", IMAGE_UA);
+    for referer in referer_candidates(url, page_url) {
+        let mut req = http.get(url).header("User-Agent", IMAGE_UA);
         if let Some(r) = &referer {
             req = req.header("Referer", r.as_str());
         }
@@ -585,6 +594,100 @@ pub async fn fetch_image(
         }
     }
     Err(last_err)
+}
+
+/// [`fetch_image_bytes`] behind a per-URL disk cache under the app data dir.
+/// The reader re-requests every body image on each open of an article, so the
+/// cache keeps repeat opens instant (and works offline). Writes land via a
+/// temp file + rename so a crash can never leave a truncated entry.
+async fn cached_image_bytes(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    url: &str,
+    page_url: Option<&str>,
+) -> AppResult<Vec<u8>> {
+    use std::hash::{Hash, Hasher};
+    let cache = app
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join("image-cache"));
+    if let Some(dir) = &cache {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        url.hash(&mut hasher);
+        let key = format!("{:016x}", hasher.finish());
+        if let Ok(bytes) = tokio::fs::read(dir.join(&key)).await {
+            return Ok(bytes);
+        }
+        let bytes = fetch_image_bytes(state.http(), url, page_url).await?;
+        let _ = tokio::fs::create_dir_all(dir).await;
+        let tmp = dir.join(format!("{key}.tmp"));
+        if tokio::fs::write(&tmp, &bytes).await.is_ok() {
+            let _ = tokio::fs::rename(&tmp, dir.join(&key)).await;
+        }
+        return Ok(bytes);
+    }
+    fetch_image_bytes(state.http(), url, page_url).await
+}
+
+/// Downscale an image so its longest side is at most `max_dim`, re-encoding
+/// opaque images as JPEG q85 and alpha-bearing ones as PNG. The point is the
+/// webview's *decoded* bitmap, which scales with source pixels: a full-size
+/// 3024px screenshot decodes to a ~23MB bitmap that WKWebView's image cache
+/// drops under scroll/repaint pressure and re-decodes asynchronously, so the
+/// image paints blank for a beat — the article-image flash. At display size
+/// the decode is a few MB and a re-decode fits inside a frame. Unparseable
+/// bytes, animated containers (GIF, animated WebP) and already-small images
+/// pass through unchanged.
+fn scale_bytes(bytes: Vec<u8>, max_dim: u32) -> Vec<u8> {
+    let Ok(format) = image::guess_format(&bytes) else {
+        return bytes;
+    };
+    if format == image::ImageFormat::Gif
+        || (format == image::ImageFormat::WebP && bytes.windows(4).any(|w| w == b"ANIM"))
+    {
+        return bytes;
+    }
+    let Ok(img) = image::load_from_memory(&bytes) else {
+        return bytes;
+    };
+    if img.width() <= max_dim && img.height() <= max_dim {
+        return bytes;
+    }
+    let scaled = img.thumbnail(max_dim, max_dim);
+    let mut out = Vec::new();
+    let written = if scaled.color().has_alpha() {
+        scaled.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+    } else {
+        image::DynamicImage::ImageRgb8(scaled.to_rgb8()).write_with_encoder(
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85),
+        )
+    };
+    if written.is_err() || out.is_empty() {
+        bytes
+    } else {
+        out
+    }
+}
+
+/// Fetch a body image at reader-display size: the Referer-fallback fetch of
+/// [`fetch_image`] (behind a per-URL disk cache) followed by a downscale to
+/// `max_dim` on the longest side — see [`scale_bytes`] for why. The reader
+/// injects the returned bytes as a data: URL, so the webview never decodes a
+/// full-resolution source.
+#[tauri::command]
+pub async fn fetch_image_scaled(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    url: String,
+    page_url: Option<String>,
+    max_dim: u32,
+) -> AppResult<Vec<u8>> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return Err(AppError::code("badImageUrl"));
+    }
+    let bytes = cached_image_bytes(&app, &state, &url, page_url.as_deref()).await?;
+    Ok(scale_bytes(bytes, max_dim))
 }
 
 // ─────────────────────────── OPML ───────────────────────────
@@ -1247,6 +1350,58 @@ pub async fn reorder_tags(state: State<'_, AppState>, ids: Vec<i64>) -> AppResul
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // --- scale_bytes: the reader's display-size image cap ---
+
+    fn png_bytes(w: u32, h: u32, alpha: bool) -> Vec<u8> {
+        let mut out = Vec::new();
+        let img = image::DynamicImage::new_rgb8(w, h);
+        if alpha {
+            image::DynamicImage::new_rgba8(w, h)
+                .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+                .unwrap();
+        } else {
+            img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
+                .unwrap();
+        }
+        out
+    }
+
+    #[test]
+    fn scales_oversized_images_down_to_the_cap_preserving_ratio() {
+        let scaled = scale_bytes(png_bytes(3200, 2000, false), 1600);
+        let img = image::load_from_memory(&scaled).unwrap();
+        assert_eq!((img.width(), img.height()), (1600, 1000));
+    }
+
+    #[test]
+    fn keeps_alpha_images_as_png() {
+        let scaled = scale_bytes(png_bytes(3200, 2000, true), 1600);
+        assert_eq!(&scaled[..4], &[0x89, b'P', b'N', b'G']);
+        assert_eq!(image::load_from_memory(&scaled).unwrap().width(), 1600);
+    }
+
+    #[test]
+    fn passes_small_images_through_byte_identical() {
+        let bytes = png_bytes(800, 600, false);
+        assert_eq!(scale_bytes(bytes.clone(), 1600), bytes);
+    }
+
+    #[test]
+    fn passes_non_image_bytes_through() {
+        assert_eq!(scale_bytes(vec![1, 2, 3, 4], 1600), vec![1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn passes_gif_through_untouched_to_keep_animation() {
+        let mut out = Vec::new();
+        image::DynamicImage::new_rgb8(3200, 2000)
+            .write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Gif)
+            .unwrap();
+        // Single-frame GIF still passes through — the format check is by
+        // container, so no animated-GIF fixture is needed to pin the policy.
+        assert_eq!(scale_bytes(out.clone(), 1600), out);
+    }
 
     // --- preview-translation helpers: the plain-text round-trip the list uses ---
 

@@ -36,6 +36,23 @@ export const fetchImage = (url: string, pageUrl?: string | null) =>
     imageBytes,
   );
 
+/** Fetch a body image at reader-display size: the same Referer-fallback fetch
+ *  as `fetchImage` (behind a per-URL disk cache), then downscaled in Rust so
+ *  its longest side is at most `maxDim`. The reader injects the result as a
+ *  data: URL, so the webview never decodes a full-resolution source — huge
+ *  decoded bitmaps are what WKWebView drops and re-decodes async under scroll
+ *  pressure, which paints the image blank for a beat. */
+export const fetchImageScaled = (
+  url: string,
+  pageUrl: string | null | undefined,
+  maxDim: number,
+) =>
+  invoke<ImageBytesResponse>("fetch_image_scaled", {
+    url,
+    pageUrl: pageUrl ?? null,
+    maxDim,
+  }).then(imageBytes);
+
 // ── feeds ──
 export const listFeeds = () => invoke<Feed[]>("list_feeds");
 export const addFeed = (url: string, folderId: number | null) =>

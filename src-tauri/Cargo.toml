@@ -58,6 +58,10 @@ opml = "1"
 # Decode fetched HTML pages in their declared charset (Shift-JIS, GBK,
 # ISO-8859-1, …) instead of assuming UTF-8. Already in the tree via reqwest.
 encoding_rs = "0.8"
+# Downscale reader body images to display size (fetch_image_scaled) — full-
+# resolution sources decode to bitmaps WKWebView drops and re-decodes
+# async under scroll pressure, which paints the image blank for a beat.
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "gif", "webp"] }
 
 # content
 ammonia = "4.1.2"

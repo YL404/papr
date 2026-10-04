@@ -166,6 +166,38 @@ function makeLinkClickHandler(sourceUrl: string | null) {
   };
 }
 
+/** Body images are fetched through the backend and capped at this size on
+ *  their longest side before the reader shows them. The cap keeps the webview's
+ *  DECODED bitmap small (pixels × 4 bytes): a full-resolution 3024px screenshot
+ *  decodes to ~23MB that WKWebView's image cache drops under scroll/repaint
+ *  pressure and re-decodes asynchronously, so the image paints blank for a
+ *  beat — the article-image flash. 1600px covers the 680px reader column at
+ *  2× DPR (the lightbox still shows the scaled copy). */
+const BODY_IMAGE_MAX_DIM = 1600;
+
+/** Rewrite Next.js optimizer URLs to their original assets and strip every
+ *  network image src out of the body before it's injected, keeping the real
+ *  address in `data-papr-src` for the scaled-fetch pass (below). Injection
+ *  with no src means the webview never even starts a full-resolution load;
+ *  the `width`/`height` attributes keep the layout stable while the scaled
+ *  data: URLs fill in. Returns the html untouched when it has no such images. */
+function prepareBody(body: string, baseUrl: string | null): string {
+  if (!body.includes("<img")) return body;
+  const doc = new DOMParser().parseFromString(body, "text/html");
+  let stripped = false;
+  for (const img of doc.body.querySelectorAll("img")) {
+    const src = img.getAttribute("src") || "";
+    const orig = nextImageOriginalUrl(src, baseUrl) ?? src;
+    if (!/^https?:\/\//.test(orig)) continue;
+    img.setAttribute("data-papr-src", orig);
+    img.removeAttribute("src");
+    img.removeAttribute("srcset");
+    img.removeAttribute("sizes");
+    stripped = true;
+  }
+  return stripped ? doc.body.innerHTML : body;
+}
+
 export default function Reader({ onToast }: Props) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
@@ -214,10 +246,6 @@ export default function Reader({ onToast }: Props) {
   // URL (not blob:) so the bytes stay inline and survive the webview dropping
   // blob backing data under memory pressure — the same fix as body images.
   const [heroDataUrl, setHeroDataUrl] = useState<string | null>(null);
-  const [proxiedBody, setProxiedBody] = useState<{
-    source: string;
-    html: string;
-  } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
   const titleRef = useRef<HTMLHeadingElement>(null);
@@ -429,6 +457,10 @@ export default function Reader({ onToast }: Props) {
     };
     const recoverIfBroken = (img: HTMLImageElement) => {
       if (img.dataset.paprRetried) return;
+      // An img still waiting for the scaled-fetch pass has no src yet — not
+      // broken, just pending. `complete` is trivially true for a src-less img,
+      // so it needs this guard to stay out of the retry path.
+      if (!img.getAttribute("src")) return;
       if (img.complete && img.naturalWidth === 0) void recover(img);
     };
     const onError = (e: Event) => void recover(e.currentTarget as HTMLImageElement);
@@ -445,12 +477,10 @@ export default function Reader({ onToast }: Props) {
       img.decoding = "sync";
       img.addEventListener("error", onError);
       watched.push(img);
-      // Proxy-eligible images (少数派/CDN hosts that reject a bare no-referrer
-      // request) are rewritten to data: URLs up front by the `proxiedBody`
-      // effect, so don't fetch them again here — that duplicated the backend /
-      // IPC / network work for every matched image. `onError` above stays as a
-      // fallback; this only retries an image that had already failed before the
-      // listener attached.
+      // Body images start src-less (the scaled-fetch pass fills them in), so
+      // this only retries an image that already failed with a src in place —
+      // a restored original URL the webview also couldn't load. `onError`
+      // above covers failures reported after this pass.
       recoverIfBroken(img);
     });
     // WKWebView can finish a parser-inserted image before React's effect
@@ -562,72 +592,49 @@ export default function Reader({ onToast }: Props) {
     ? translatedBody ||
       (translating ? `<p><em>${t("reader.translating")}</em></p>` : baseBody)
     : baseBody;
-  const displayBody = proxiedBody?.source === body ? proxiedBody.html : body;
+  const displayBody = useMemo(
+    () => prepareBody(body, a?.url ?? null),
+    [body, a?.url],
+  );
   // Whether the body already opens with its own image/video — if so, the hero
   // thumbnail is suppressed to avoid a redundant top image (issue #97).
   const leadsWithMedia = useMemo(() => bodyLeadsWithMedia(baseBody), [baseBody]);
 
-  // Rewrite Next.js optimizer URLs to the original assets (nextImageOriginalUrl
-  // — why) and, for hosts that require a Referer (notably 少数派's image CDN),
-  // proxy image URLs before injecting the HTML. This avoids relying on
-  // WKWebView's image error events for parser-inserted nodes, which are not
-  // reliable in release builds. The fetched bytes are inlined as data: URLs
-  // (not blob:) so they survive the webview dropping blob backing data while
-  // scrolling.
+  // For hosts that require a Referer (notably 少数派's image CDN) the plain
+  // webview load fails (no per-host Referer control); and full-resolution
+  // sources decode to bitmaps the webview drops and re-decodes under scroll
+  // pressure. So every network body image goes through the backend instead:
+  // `prepareBody` strips the srcs before injection (above), and this pass
+  // fetches each one downscaled and swaps its data: URL in on the live DOM —
+  // no innerHTML reset, so already-filled images never reload. A failed fetch
+  // hands the original URL to the webview's own loader rather than hiding the
+  // image; the recovery effect below still hides it if that fails too.
   useEffect(() => {
-    if (!body) {
-      setProxiedBody(null);
-      return;
-    }
-    const doc = new DOMParser().parseFromString(body, "text/html");
-    // Next.js optimizer URLs (`/_next/image?...`) are rewritten to the original
-    // asset first — an optimizer URL on a hotlink-protected host must still
-    // reach the proxy pass below with its rewritten address.
-    let rewrote = false;
-    for (const img of doc.body.querySelectorAll("img")) {
-      const orig = nextImageOriginalUrl(
-        img.getAttribute("src") || "",
-        a?.url ?? null,
-      );
-      if (orig) {
-        img.setAttribute("src", orig);
-        rewrote = true;
-      }
-    }
-    const imgs = Array.from(doc.body.querySelectorAll("img")).filter((img) => {
-      const src = img.getAttribute("src") || "";
-      return /^https?:\/\//.test(src) && needsImageProxy(src);
-    });
-    if (imgs.length === 0) {
-      if (rewrote) setProxiedBody({ source: body, html: doc.body.innerHTML });
-      else setProxiedBody(null);
-      return;
-    }
-
+    const el = bodyRef.current;
+    if (!el) return;
     let alive = true;
-    Promise.all(
-      imgs.map(async (img) => {
-        const src = img.getAttribute("src") || "";
-        try {
-          const buf = await api.fetchImage(src, a?.url);
-          if (!alive) return;
-          img.dataset.paprSrc = src;
-          img.setAttribute("src", imageDataUrl(src, buf));
-          img.removeAttribute("srcset");
-          img.removeAttribute("referrerpolicy");
-        } catch {
-          if (!alive) return;
-          img.style.display = "none";
-        }
-      }),
-    ).then(() => {
-      if (alive) setProxiedBody({ source: body, html: doc.body.innerHTML });
-    });
-
+    const fill = async (img: HTMLImageElement) => {
+      const src = img.dataset.paprSrc;
+      if (!src) return;
+      try {
+        const buf = await api.fetchImageScaled(src, a?.url, BODY_IMAGE_MAX_DIM);
+        if (!alive || !img.isConnected) return;
+        img.src = imageDataUrl(src, buf);
+      } catch {
+        if (!alive || !img.isConnected) return;
+        img.src = src;
+      }
+    };
+    for (const img of el.querySelectorAll<HTMLImageElement>(
+      "img[data-papr-src]",
+    )) {
+      if (img.getAttribute("src")) continue; // already filled or restored
+      void fill(img);
+    }
     return () => {
       alive = false;
     };
-  }, [body, a?.url]);
+  }, [displayBody, a?.url]);
 
   // The external-link arrow is drawn by the stylesheet for every body link with
   // an href (see `.article-body a[href]:not([href^="#"])::after`), so it can
