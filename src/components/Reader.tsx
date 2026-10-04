@@ -198,6 +198,11 @@ function prepareBody(body: string, baseUrl: string | null): string {
   return stripped ? doc.body.innerHTML : body;
 }
 
+/** Session cache of filled data: URLs, keyed by the original image URL. Makes
+ *  fills survive body re-injections (a re-injected img is re-filled from the
+ *  map instantly instead of re-requesting). */
+const filledImages = new Map<string, string>();
+
 export default function Reader({ onToast }: Props) {
   const { t, i18n } = useTranslation();
   const qc = useQueryClient();
@@ -596,6 +601,18 @@ export default function Reader({ onToast }: Props) {
     () => prepareBody(body, a?.url ?? null),
     [body, a?.url],
   );
+  // The injected-HTML prop object must be referentially stable while the string
+  // is unchanged: React 19's host-update path compares prop values by identity
+  // (`===`) and its `dangerouslySetInnerHTML` branch assigns innerHTML
+  // unconditionally, so an inline `{ __html: ... }` literal — a new object on
+  // every render — makes every scroll/hover-driven re-render of the reader
+  // re-set the whole body, reloading every image and flashing them (the
+  // article-image flicker). Memoising on the string keeps re-renders from
+  // touching the DOM at all, and a changed string still lands.
+  const bodyHtml = useMemo(
+    () => ({ __html: displayBody || `<p><em>${t("reader.noContent")}</em></p>` }),
+    [displayBody, t],
+  );
   // Whether the body already opens with its own image/video — if so, the hero
   // thumbnail is suppressed to avoid a redundant top image (issue #97).
   const leadsWithMedia = useMemo(() => bodyLeadsWithMedia(baseBody), [baseBody]);
@@ -616,10 +633,20 @@ export default function Reader({ onToast }: Props) {
     const fill = async (img: HTMLImageElement) => {
       const src = img.dataset.paprSrc;
       if (!src) return;
+      // A re-injected body (article switch, translation toggle) wipes img srcs;
+      // the session map re-fills those from memory without an IPC round trip.
+      const cached = filledImages.get(src);
+      if (cached) {
+        img.src = cached;
+        return;
+      }
       try {
         const buf = await api.fetchImageScaled(src, a?.url, BODY_IMAGE_MAX_DIM);
         if (!alive || !img.isConnected) return;
-        img.src = imageDataUrl(src, buf);
+        const dataUrl = imageDataUrl(src, buf);
+        if (filledImages.size >= 40) filledImages.clear();
+        filledImages.set(src, dataUrl);
+        img.src = dataUrl;
       } catch {
         if (!alive || !img.isConnected) return;
         img.src = src;
@@ -1323,9 +1350,7 @@ export default function Reader({ onToast }: Props) {
             className="article-body"
             ref={bodyRef}
             onClick={handleBodyClick}
-            dangerouslySetInnerHTML={{
-              __html: displayBody || `<p><em>${t("reader.noContent")}</em></p>`,
-            }}
+            dangerouslySetInnerHTML={bodyHtml}
           />
         </article>
       </div>
@@ -1544,6 +1569,10 @@ function AISummarySection({ article }: { article: ArticleDetail }) {
   // Parse + sanitize the summary only when the text changes, not on every
   // re-render of the section.
   const html = useMemo(() => (text ? renderMarkdown(text) : ""), [text]);
+  // The injected-HTML prop object itself, memoised — same React 19
+  // identity-diff as `bodyHtml` above; an inline literal would re-set the
+  // summary's innerHTML on every render.
+  const proseHtml = useMemo(() => ({ __html: html }), [html]);
 
   // The secondary line under the card — never inside it, so neither the
   // pre-generation prompt nor the provenance reads as part of the summary
@@ -1609,7 +1638,7 @@ function AISummarySection({ article }: { article: ArticleDetail }) {
             <div
               className="ai-prose"
               onClick={makeLinkClickHandler(article.url)}
-              dangerouslySetInnerHTML={{ __html: html }}
+              dangerouslySetInnerHTML={proseHtml}
             />
           )}
         </div>
