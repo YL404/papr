@@ -439,10 +439,9 @@ export default function Reader({ onToast }: Props) {
       // images start loading now instead of popping in blank mid-scroll.
       // Sanitize runs at ingestion, so it never rewrites existing DB rows.
       img.loading = "eager";
-      // Sync decode as the flicker backstop: if the compositor does discard a
-      // promoted image layer's contents (see `.article-body img` in the
-      // stylesheet), its tile re-raster waits for the decode instead of
-      // committing a blank frame first.
+      // Sync decode as the flicker backstop: when a content tile that contains
+      // images re-rasterizes after the webview dropped its raster, the paint
+      // waits for the decode instead of committing a blank frame first.
       img.decoding = "sync";
       img.addEventListener("error", onError);
       watched.push(img);

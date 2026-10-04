@@ -2672,19 +2672,13 @@ button { font-family: inherit; }
   display: block;
   margin-left: auto;
   margin-right: auto;
-  /* Same composited-layer promotion as `.article-body img` — the hero is
-     scaled the same way and flashes the same way on scroll-back. */
-  transform: translateZ(0);
 }
 .article-body img {
   /* Original size first: the only shrinks are "must fit the column" and the
      viewport-height cap. Both resolve through the CSS constraint table, so
      the aspect ratio is preserved and the image scales to whichever limit
      binds; smaller images are untouched, and the lightbox (click) still
-     shows full size. The height cap matters beyond layout: without it a tall
-     screenshot's composited layer exceeds the GPU texture threshold, gets
-     split into tiles that are dropped far more readily under scroll
-     pressure — the size cap is part of keeping the scroll flicker away. */
+     shows full size. */
   max-width: 100%;
   max-height: 70vh;
   height: auto;
@@ -2692,13 +2686,11 @@ button { font-family: inherit; }
   margin: 1.2em auto;
   display: block;
   cursor: zoom-in;
-  /* Each image on its own composited layer. WKWebView evicts the decoded data
-     of large downscaled images (phone screenshots etc.) under scroll pressure
-     and re-decodes async when their tile re-rasterizes, so the tile paints
-     blank for a frame or two — scaled images flash while scrolling while 1:1
-     ones don't. A dedicated layer keeps the already-scaled raster cached;
-     scrolling only translates it. */
-  transform: translateZ(0);
+  /* Deliberately NOT promoted to its own composited layer (no translateZ(0)):
+     on current macOS a promoted image layer's backing store gets dropped and
+     re-committed under scroll/click pressure, and the re-commit lands a blank
+     frame first — the image flashes. Unpromoted, the image rides the article
+     content tiles, which scroll by translation without per-layer commits. */
 }
 
 /* Full-screen image viewer (issue #87) */
