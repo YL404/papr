@@ -23,7 +23,7 @@ use url::Url;
 
 /// Repaint the native window + webview backing to `(r, g, b)` so a live resize
 /// never flashes a mismatched strip at the dragged edge. macOS-only effect (see
-/// `backing::apply`, which pins drawsBackground / underPageBackgroundColor /
+/// `backing::apply`, which pins underPageBackgroundColor /
 /// NSWindow); a harmless no-op elsewhere. Called from the frontend on every
 /// theme change, alongside Tauri's cross-platform `setBackgroundColor`.
 #[tauri::command]

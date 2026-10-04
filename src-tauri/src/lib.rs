@@ -81,7 +81,7 @@ pub fn run() {
             // build). So between window creation and the webview's first paint —
             // and in the strip a live resize exposes — a dark-theme user sees a
             // white flash. `backing::apply` repaints every native surface that
-            // can show through (drawsBackground / underPageBackgroundColor /
+            // can show through (underPageBackgroundColor /
             // NSWindow). Done here before the first frame; the frontend
             // re-asserts it on every theme change. See backing.rs / tauri#14288.
             {

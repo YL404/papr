@@ -15,8 +15,6 @@
 //! backing — *before* the NSWindow colour is ever reached.
 //!
 //! So we paint, in the theme colour, every native surface that strip can show:
-//!   • `drawsBackground = NO` + `setOpaque: NO` — the page never paints its own
-//!     white backdrop and lets lower layers composite through.
 //!   • `underPageBackgroundColor` — the overscroll / resize *gutter* (macOS 12+),
 //!     which otherwise stays stuck on the light window-config colour.
 //!   • the CALayer of the webview **and every ancestor up to the window's
@@ -24,6 +22,16 @@
 //!     Overlay titlebar. We stop at contentView so the titlebar frame
 //!     (NSThemeFrame) is left untouched.
 //!   • `NSWindow.backgroundColor` — the final layer behind everything.
+//!
+//! The webview itself is left fully OPAQUE (default `drawsBackground`): page
+//! CSS paints every pixel of it, so the backing colour is never visible, and
+//! an opaque WKWebView runs the plain compositing path. An earlier revision
+//! also set `drawsBackground = NO` + `setOpaque: NO` here; that routes every
+//! frame through the transparency compositing path, where a tile that is
+//! still rasterizing shows the layers behind the webview — under scroll or
+//! click pressure that read as article images flashing to the background
+//! colour. Opaque compositing holds the frame instead, at no cost to this
+//! module's job (all the white-flash surfaces above stay themed).
 //!
 //! Called once in `setup()` with the saved theme's colour (before the first
 //! frame) and re-asserted from the frontend on every theme change via the
@@ -36,17 +44,7 @@ pub fn apply(window: &tauri::WebviewWindow, r: u8, g: u8, b: u8) {
         use objc2::msg_send;
         use objc2::runtime::AnyObject;
         use objc2_app_kit::{NSColor, NSWindow};
-        use objc2_foundation::{NSNumber, NSString};
         use objc2_web_kit::WKWebView;
-
-        let wk: &WKWebView = &*webview.inner().cast::<WKWebView>();
-        let wk_obj = wk as *const WKWebView as *mut AnyObject;
-
-        // 1) never paint the page's own (white) backdrop; let lower layers show.
-        let no = NSNumber::numberWithBool(false);
-        let key = NSString::from_str("drawsBackground");
-        let _: () = msg_send![wk_obj, setValue: &*no, forKey: &*key];
-        let _: () = msg_send![wk_obj, setOpaque: false];
 
         let color = NSColor::colorWithSRGBRed_green_blue_alpha(
             r as f64 / 255.0,
@@ -56,14 +54,19 @@ pub fn apply(window: &tauri::WebviewWindow, r: u8, g: u8, b: u8) {
         );
         let cg = color.CGColor();
 
-        // 2) the overscroll / live-resize gutter (macOS 12+).
+        let wk: &WKWebView = &*webview.inner().cast::<WKWebView>();
+        let wk_obj = wk as *const WKWebView as *mut AnyObject;
+
+        // 1) the overscroll / resize gutter (macOS 12+). The webview's own
+        //    backing is left untouched — see the module doc for why it stays
+        //    opaque.
         let _: () = msg_send![wk_obj, setUnderPageBackgroundColor: &*color];
 
         let ns_window: &NSWindow = &*webview.ns_window().cast::<NSWindow>();
         let win_obj = ns_window as *const NSWindow as *mut AnyObject;
         let content_view: *mut AnyObject = msg_send![win_obj, contentView];
 
-        // 3) paint the CALayer of the webview and every ancestor up to (and
+        // 2) paint the CALayer of the webview and every ancestor up to (and
         //    including) the window's contentView — the opaque white container
         //    layers the Overlay titlebar leaves between webview and window.
         let mut v = wk_obj;
