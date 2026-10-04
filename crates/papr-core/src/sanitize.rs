@@ -48,7 +48,7 @@ pub fn sanitize(html: &str, base: Option<&str>) -> String {
         // text-only. Forcing the attribute on every `<img>` also overrides any
         // weaker policy the feed shipped. Hosts that instead *require* a
         // Referer (e.g. `cdnfile.sspai.com`) are covered by the reader's
-        // retry-through-backend path — see `commands::fetch_image`.
+        // retry-through-backend path — see `commands::fetch_image_scaled`.
         .set_tag_attribute_value("img", "referrerpolicy", "no-referrer")
         // Force eager loading: the reader renders stored HTML in a scroll pane,
         // and a feed's `loading="lazy"` makes WKWebView defer each image until
@@ -72,7 +72,7 @@ pub fn sanitize(html: &str, base: Option<&str>) -> String {
 /// whitelist keeps `src` but drops `data-*`/`srcset`, which would leave an
 /// `<img>` with nothing to load. Filling `src` here lets the recovered URL flow
 /// through the rest of the pipeline unchanged — relative-URL rewriting, the
-/// forced `no-referrer` policy, the webview load, and the `fetch_image` Referer
+/// forced `no-referrer` policy, the webview load, and the backend fetch's Referer
 /// fallback that handles hosts like `cdnfile.sspai.com`. Runs before `clean`,
 /// so ammonia still has the final say on safety; a rewrite failure falls back
 /// to the original HTML.

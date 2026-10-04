@@ -28,20 +28,22 @@ export const deleteFolder = (id: number) =>
 // ── images ──
 /** Fetch an image's raw bytes via the backend, which walks Referer fallbacks
  *  (none → image origin → article URL) until the host serves it — hotlink
- *  protection demands different Referers on different hosts. Used by the
- *  reader's "Save image" action and to retry images the webview itself failed
- *  to load. `pageUrl` is the embedding article's link. */
+ *  protection demands different Referers on different hosts. Used only by the
+ *  reader's "Save image" action: a download wants the original bytes, uncapped
+ *  and un-re-encoded. Everything the UI displays goes through
+ *  `fetchImageScaled`. `pageUrl` is the embedding article's link. */
 export const fetchImage = (url: string, pageUrl?: string | null) =>
   invoke<ImageBytesResponse>("fetch_image", { url, pageUrl: pageUrl ?? null }).then(
     imageBytes,
   );
 
-/** Fetch a body image at reader-display size: the same Referer-fallback fetch
- *  as `fetchImage` (behind a per-URL disk cache), then downscaled in Rust so
- *  its longest side is at most `maxDim`. The reader injects the result as a
- *  data: URL, so the webview never decodes a full-resolution source — huge
- *  decoded bitmaps are what WKWebView drops and re-decodes async under scroll
- *  pressure, which paints the image blank for a beat. */
+/** Fetch a display image at a capped size: the same Referer-fallback fetch as
+ *  `fetchImage` (behind a per-URL disk cache of the original bytes), then
+ *  downscaled in Rust so its longest side is at most `maxDim`. Everything the
+ *  UI renders — reader body, hero, list thumbnails — goes through here, and
+ *  the result is injected as a data: URL, so the webview never decodes a
+ *  full-resolution source (huge decoded bitmaps are what WKWebView drops and
+ *  re-decodes async under scroll pressure, painting the image blank). */
 export const fetchImageScaled = (
   url: string,
   pageUrl: string | null | undefined,

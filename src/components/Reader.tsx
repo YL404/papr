@@ -166,14 +166,15 @@ function makeLinkClickHandler(sourceUrl: string | null) {
   };
 }
 
-/** Body images are fetched through the backend and capped at this size on
- *  their longest side before the reader shows them. The cap keeps the webview's
- *  DECODED bitmap small (pixels × 4 bytes): a full-resolution 3024px screenshot
- *  decodes to ~23MB that WKWebView's image cache drops under scroll/repaint
- *  pressure and re-decodes asynchronously, so the image paints blank for a
- *  beat — the article-image flash. 1600px covers the 680px reader column at
- *  2× DPR (the lightbox still shows the scaled copy). */
-const BODY_IMAGE_MAX_DIM = 1600;
+/** Every reader image (body, hero, retries) is fetched through the backend and
+ *  capped at this size on its longest side before display. The cap keeps the
+ *  webview's DECODED bitmap small (pixels × 4 bytes): a full-resolution 3024px
+ *  screenshot decodes to ~23MB that WKWebView's image cache drops under
+ *  scroll/repaint pressure and re-decodes asynchronously, so the image paints
+ *  blank for a beat — the article-image flash. 1600px covers the 680px reader
+ *  column at 2× DPR; only "Save image" bypasses the cap to write the original
+ *  bytes. */
+const READER_IMAGE_MAX_DIM = 1600;
 
 /** Rewrite Next.js optimizer URLs to their original assets and strip every
  *  network image src out of the body before it's injected, keeping the real
@@ -429,9 +430,10 @@ export default function Reader({ onToast }: Props) {
   // blacklist-style hotlink protection (*.sinaimg.cn) but fatal on hosts that
   // *require* one (cdnfile.sspai.com 403s a bare request), and the webview
   // can't vary the value per host. So a failed image gets one retry through
-  // the backend, which walks Referer fallbacks (fetch_image) and returns the
-  // bytes; the <img> is swapped to an inline data: URL, with the original kept
-  // in data-papr-src for the context-menu actions. A data: URL (not blob:) is
+  // the backend, which walks Referer fallbacks (fetch_image_scaled) and
+  // returns display-sized bytes; the <img> is swapped to an inline data: URL,
+  // with the original kept in data-papr-src for the context-menu actions. A
+  // data: URL (not blob:) is
   // deliberate — WKWebView/WebView2 silently drop a blob:'s backing data under
   // memory pressure (e.g. layer recompositing while scrolling), so a recovered
   // image carried by a blob: vanishes when the user scrolls away and back; the
@@ -452,7 +454,7 @@ export default function Reader({ onToast }: Props) {
       }
       img.dataset.paprRetried = "1";
       try {
-        const buf = await api.fetchImage(src, pageUrl);
+        const buf = await api.fetchImageScaled(src, pageUrl, READER_IMAGE_MAX_DIM);
         if (!alive) return;
         img.dataset.paprSrc = src;
         img.src = imageDataUrl(src, buf);
@@ -510,7 +512,7 @@ export default function Reader({ onToast }: Props) {
     let alive = true;
     const articleId = a.id;
     api
-      .fetchImage(a.imageUrl, a.url)
+      .fetchImageScaled(a.imageUrl, a.url, READER_IMAGE_MAX_DIM)
       .then((buf) => {
         if (!alive || useUi.getState().selectedArticleId !== articleId) return;
         setHeroDataUrl(imageDataUrl(a.imageUrl!, buf));
@@ -641,7 +643,7 @@ export default function Reader({ onToast }: Props) {
         return;
       }
       try {
-        const buf = await api.fetchImageScaled(src, a?.url, BODY_IMAGE_MAX_DIM);
+        const buf = await api.fetchImageScaled(src, a?.url, READER_IMAGE_MAX_DIM);
         if (!alive || !img.isConnected) return;
         const dataUrl = imageDataUrl(src, buf);
         if (filledImages.size >= 40) filledImages.clear();
@@ -1238,7 +1240,7 @@ export default function Reader({ onToast }: Props) {
                   }
                   const articleId = a.id;
                   api
-                    .fetchImage(a.imageUrl!, a.url)
+                    .fetchImageScaled(a.imageUrl!, a.url, READER_IMAGE_MAX_DIM)
                     .then((buf) => {
                       if (useUi.getState().selectedArticleId !== articleId) return;
                       setHeroDataUrl(imageDataUrl(a.imageUrl!, buf));

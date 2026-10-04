@@ -819,6 +819,10 @@ export default function ArticleList({ onToast }: Props) {
   );
 }
 
+/** Card thumbnails render far below reader images (a ~160px card at 2× DPR),
+ *  so their backend fetches cap the longest side lower than the reader's cap. */
+const THUMB_IMAGE_MAX_DIM = 480;
+
 /** Card/small-image view thumbnail: the article image, or nothing. When a card
  *  has no usable image — none supplied and none extractable from the body, or
  *  the image can't be loaded even after the backend retry — the card simply
@@ -827,8 +831,9 @@ export default function ArticleList({ onToast }: Props) {
  *  The webview sends image requests without a Referer: right for blacklist-
  *  style hotlink protection (*.sinaimg.cn) but fatal on hosts that *require*
  *  one (cdnfile.sspai.com 403s a bare request). The reader recovers such
- *  images through the backend `fetch_image` path, which walks Referer
- *  fallbacks; the list gets the same treatment here, or every feed served by
+ *  images through the backend's scaled fetch (`fetch_image_scaled`), which
+ *  walks Referer fallbacks; the list gets the same treatment here, or every
+ *  feed served by
  *  such a host would show a text-only list despite having images. Two paths,
  *  mirroring the reader: proxy-eligible hosts are fetched up front (waiting
  *  for onError leaves a broken state in WKWebView on some builds), everything
@@ -857,7 +862,7 @@ function CardThumb({ article }: { article: ArticleSummary }) {
     if (!imageUrl || !needsImageProxy(imageUrl)) return;
     let alive = true;
     api
-      .fetchImage(imageUrl, article.url)
+      .fetchImageScaled(imageUrl, article.url, THUMB_IMAGE_MAX_DIM)
       .then((buf) => {
         if (alive) setSrc(imageDataUrl(imageUrl, buf));
       })
@@ -880,7 +885,7 @@ function CardThumb({ article }: { article: ArticleSummary }) {
     }
     retried.current = src;
     api
-      .fetchImage(src, article.url)
+      .fetchImageScaled(src, article.url, THUMB_IMAGE_MAX_DIM)
       .then((buf) => setSrc(imageDataUrl(src, buf)))
       .catch(() => setBroken(true));
   };

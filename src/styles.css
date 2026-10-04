@@ -2663,9 +2663,11 @@ button { font-family: inherit; }
 /* Reader hero (the list-thumbnail shown above the body). It lives on
    `.reader-content`, not inside `.article-body`, so the `.article-body img`
    sizing below does not reach it — without its own constraint a large source
-   image renders at natural size and overflows the column (issue #97). */
+   image renders at natural size and overflows the column (issue #97). Same
+   caps as body images: never full-bleed, ratio preserved. */
 .reader-hero {
-  max-width: 100%;
+  max-width: 85%;
+  max-height: 60vh;
   height: auto;
   border-radius: 8px;
   margin: 0 0 1.2em;
@@ -2674,13 +2676,13 @@ button { font-family: inherit; }
   margin-right: auto;
 }
 .article-body img {
-  /* Original size first: the only shrinks are "must fit the column" and the
-     viewport-height cap. Both resolve through the CSS constraint table, so
-     the aspect ratio is preserved and the image scales to whichever limit
-     binds; smaller images are untouched, and the lightbox (click) still
-     shows full size. */
-  max-width: 100%;
-  max-height: 70vh;
+  /* Capped, never full-bleed: at most 85% of the column width and 60% of the
+     viewport height, so no image spans the whole canvas. Both limits resolve
+     through the CSS constraint table, so the aspect ratio is preserved and
+     whichever limit binds wins; smaller images are untouched. The lightbox
+     (click) is the full-bleed view. */
+  max-width: 85%;
+  max-height: 60vh;
   height: auto;
   border-radius: 8px;
   margin: 1.2em auto;

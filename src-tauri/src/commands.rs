@@ -545,8 +545,9 @@ fn referer_candidates(image_url: &str, page_url: Option<&str>) -> Vec<Option<Str
     out
 }
 
-/// Fetch a feed image's bytes — for the reader's "Save image" action and as
-/// the retry path for images the webview itself failed to load.
+/// Fetch an image's original bytes — used only by the reader's "Save image"
+/// action, which writes what the host served rather than a re-encoded copy.
+/// Display images go through [`fetch_image_scaled`] instead.
 ///
 /// Done in Rust rather than via the webview so the request's `Referer` can be
 /// controlled: it walks [`referer_candidates`] (none → image origin → article
@@ -670,10 +671,11 @@ fn scale_bytes(bytes: Vec<u8>, max_dim: u32) -> Vec<u8> {
     }
 }
 
-/// Fetch a body image at reader-display size: the Referer-fallback fetch of
-/// [`fetch_image`] (behind a per-URL disk cache) followed by a downscale to
-/// `max_dim` on the longest side — see [`scale_bytes`] for why. The reader
-/// injects the returned bytes as a data: URL, so the webview never decodes a
+/// Fetch a display image (reader body, hero, list thumbnails) at a capped
+/// size: the Referer-fallback fetch of [`fetch_image`] behind a per-URL disk
+/// cache of the original bytes, followed by a downscale to `max_dim` on the
+/// longest side — see [`scale_bytes`] for why. The frontend injects the
+/// returned bytes as a data: URL, so the webview never decodes a
 /// full-resolution source.
 #[tauri::command]
 pub async fn fetch_image_scaled(
