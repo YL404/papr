@@ -2677,13 +2677,20 @@ button { font-family: inherit; }
 }
 .article-body img {
   /* Capped, never full-bleed: at most 85% of the column width and 60% of the
-     viewport height, so no image spans the whole canvas. Both limits resolve
-     through the CSS constraint table, so the aspect ratio is preserved and
-     whichever limit binds wins; smaller images are untouched. The lightbox
-     (click) is the full-bleed view. */
+     viewport height; smaller images are untouched, and the lightbox (click)
+     is the full-bleed view.
+     width:auto is load-bearing, not cosmetic: feed <img>s carry width/height
+     attributes, and the width one becomes a presentational hint — a definite
+     width. When max-height binds, WebKit clamps the height against that
+     width without re-deriving either side from the ratio, so a tall
+     1456x1760 diagram squashes into an 85%-column x 60vh box (the reported
+     distortion — the web doesn't hit it because Substack ships no
+     max-height). Both dimensions auto move sizing onto the natural-ratio
+     constraint path, which cannot distort. */
+  width: auto;
+  height: auto;
   max-width: 85%;
   max-height: 60vh;
-  height: auto;
   border-radius: 8px;
   margin: 1.2em auto;
   display: block;
