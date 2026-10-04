@@ -632,14 +632,16 @@ async fn cached_image_bytes(
 }
 
 /// Downscale an image so its longest side is at most `max_dim`, re-encoding
-/// opaque images as JPEG q85 and alpha-bearing ones as PNG. The point is the
-/// webview's *decoded* bitmap, which scales with source pixels: a full-size
-/// 3024px screenshot decodes to a ~23MB bitmap that WKWebView's image cache
-/// drops under scroll/repaint pressure and re-decodes asynchronously, so the
-/// image paints blank for a beat — the article-image flash. At display size
-/// the decode is a few MB and a re-decode fits inside a frame. Unparseable
-/// bytes, animated containers (GIF, animated WebP) and already-small images
-/// pass through unchanged.
+/// in the source's format: PNG (line-art diagrams, screenshots — exactly the
+/// images where a lossy re-encode is visible) stays PNG, photographic sources
+/// re-encode as JPEG q90, and alpha-bearing output needs PNG regardless. The
+/// point is the webview's *decoded* bitmap, which scales with source pixels:
+/// a full-size 3024px screenshot decodes to a ~23MB bitmap that WKWebView's
+/// image cache drops under scroll/repaint pressure and re-decodes
+/// asynchronously, so the image paints blank for a beat — the article-image
+/// flash. At display size the decode is a few MB and a re-decode fits inside
+/// a frame. Unparseable bytes, animated containers (GIF, animated WebP) and
+/// already-small images pass through unchanged.
 fn scale_bytes(bytes: Vec<u8>, max_dim: u32) -> Vec<u8> {
     let Ok(format) = image::guess_format(&bytes) else {
         return bytes;
@@ -657,11 +659,11 @@ fn scale_bytes(bytes: Vec<u8>, max_dim: u32) -> Vec<u8> {
     }
     let scaled = img.thumbnail(max_dim, max_dim);
     let mut out = Vec::new();
-    let written = if scaled.color().has_alpha() {
+    let written = if format == image::ImageFormat::Png || scaled.color().has_alpha() {
         scaled.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png)
     } else {
         image::DynamicImage::ImageRgb8(scaled.to_rgb8()).write_with_encoder(
-            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 85),
+            image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 90),
         )
     };
     if written.is_err() || out.is_empty() {
@@ -1381,6 +1383,15 @@ mod tests {
         let scaled = scale_bytes(png_bytes(3200, 2000, true), 1600);
         assert_eq!(&scaled[..4], &[0x89, b'P', b'N', b'G']);
         assert_eq!(image::load_from_memory(&scaled).unwrap().width(), 1600);
+    }
+
+    #[test]
+    fn keeps_png_sources_png_when_downscaling() {
+        // The article-image compression report: a CDN-delivered PNG diagram
+        // re-encoded as JPEG q85 gained visible artifacts. A PNG source must
+        // stay PNG even when its pixels shrink.
+        let scaled = scale_bytes(png_bytes(3200, 2000, false), 1600);
+        assert_eq!(&scaled[..4], &[0x89, b'P', b'N', b'G']);
     }
 
     #[test]

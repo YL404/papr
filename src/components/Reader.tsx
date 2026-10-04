@@ -171,10 +171,11 @@ function makeLinkClickHandler(sourceUrl: string | null) {
  *  webview's DECODED bitmap small (pixels × 4 bytes): a full-resolution 3024px
  *  screenshot decodes to ~23MB that WKWebView's image cache drops under
  *  scroll/repaint pressure and re-decodes asynchronously, so the image paints
- *  blank for a beat — the article-image flash. 1600px covers the 680px reader
- *  column at 2× DPR; only "Save image" bypasses the cap to write the original
+ *  blank for a beat — the article-image flash. 2048 keeps the worst case near
+ *  ~17MB and leaves CDN deliveries under it (Substack serves w_1456)
+ *  byte-identical; only "Save image" bypasses the cap to write the original
  *  bytes. */
-const READER_IMAGE_MAX_DIM = 1600;
+const READER_IMAGE_MAX_DIM = 2048;
 
 /** Rewrite Next.js optimizer URLs to their original assets and strip every
  *  network image src out of the body before it's injected, keeping the real
