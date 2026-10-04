@@ -11,7 +11,7 @@ import { useArticleActions } from "../hooks/articleActions";
 import { renderMarkdown } from "../lib/markdown";
 import { summaryTooShort } from "../lib/summaryGate";
 import { downloadBlob, imageFilename } from "../lib/download";
-import { imageDataUrl, needsImageProxy } from "../lib/imageBytes";
+import { imageDataUrl, needsImageProxy, nextImageOriginalUrl } from "../lib/imageBytes";
 import { fullDate } from "../lib/feedMeta";
 import { isMac } from "../lib/platform";
 import { reportError, toast } from "../toast";
@@ -568,23 +568,40 @@ export default function Reader({ onToast }: Props) {
   // thumbnail is suppressed to avoid a redundant top image (issue #97).
   const leadsWithMedia = useMemo(() => bodyLeadsWithMedia(baseBody), [baseBody]);
 
-  // For hosts that require a Referer (notably 少数派's image CDN), proxy image
-  // URLs before injecting the HTML. This avoids relying on WKWebView's image
-  // error events for parser-inserted nodes, which are not reliable in release
-  // builds. The fetched bytes are inlined as data: URLs (not blob:) so they
-  // survive the webview dropping blob backing data while scrolling.
+  // Rewrite Next.js optimizer URLs to the original assets (nextImageOriginalUrl
+  // — why) and, for hosts that require a Referer (notably 少数派's image CDN),
+  // proxy image URLs before injecting the HTML. This avoids relying on
+  // WKWebView's image error events for parser-inserted nodes, which are not
+  // reliable in release builds. The fetched bytes are inlined as data: URLs
+  // (not blob:) so they survive the webview dropping blob backing data while
+  // scrolling.
   useEffect(() => {
     if (!body) {
       setProxiedBody(null);
       return;
     }
     const doc = new DOMParser().parseFromString(body, "text/html");
+    // Next.js optimizer URLs (`/_next/image?...`) are rewritten to the original
+    // asset first — an optimizer URL on a hotlink-protected host must still
+    // reach the proxy pass below with its rewritten address.
+    let rewrote = false;
+    for (const img of doc.body.querySelectorAll("img")) {
+      const orig = nextImageOriginalUrl(
+        img.getAttribute("src") || "",
+        a?.url ?? null,
+      );
+      if (orig) {
+        img.setAttribute("src", orig);
+        rewrote = true;
+      }
+    }
     const imgs = Array.from(doc.body.querySelectorAll("img")).filter((img) => {
       const src = img.getAttribute("src") || "";
       return /^https?:\/\//.test(src) && needsImageProxy(src);
     });
     if (imgs.length === 0) {
-      setProxiedBody(null);
+      if (rewrote) setProxiedBody({ source: body, html: doc.body.innerHTML });
+      else setProxiedBody(null);
       return;
     }
 

@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { imageBytes, imageDataUrl, imageMime, needsImageProxy } from "./imageBytes";
+import {
+  imageBytes,
+  imageDataUrl,
+  imageMime,
+  needsImageProxy,
+  nextImageOriginalUrl,
+} from "./imageBytes";
 
 describe("needsImageProxy", () => {
   it("matches the hosts that reject a bare no-Referer request", () => {
@@ -65,6 +71,41 @@ describe("imageMime", () => {
     expect(imageMime("https://cdn.example/no-ext", new Uint8Array([0, 1, 2]))).toBe(
       "image/jpeg",
     );
+  });
+});
+
+describe("nextImageOriginalUrl", () => {
+  it("decodes an absolute optimizer URL to the original asset", () => {
+    expect(
+      nextImageOriginalUrl(
+        "https://ex.com/_next/image?url=%2Fimg%2Fa.png&w=3840&q=75",
+        null,
+      ),
+    ).toBe("https://ex.com/img/a.png");
+  });
+
+  it("resolves a relative optimizer URL against the article's origin", () => {
+    expect(
+      nextImageOriginalUrl(
+        "/_next/image?url=%2Fimg%2Fa.png&w=1200",
+        "https://ex.com/blog/post",
+      ),
+    ).toBe("https://ex.com/img/a.png");
+  });
+
+  it("keeps an absolute encoded url param", () => {
+    expect(
+      nextImageOriginalUrl(
+        "https://ex.com/_next/image?url=https%3A%2F%2Fcdn.ex%2Fb.jpg&w=3840",
+        null,
+      ),
+    ).toBe("https://cdn.ex/b.jpg");
+  });
+
+  it("returns null for ordinary URLs and a param-less optimizer path", () => {
+    expect(nextImageOriginalUrl("https://ex.com/img/a.png", null)).toBeNull();
+    expect(nextImageOriginalUrl("https://ex.com/_next/image", null)).toBeNull();
+    expect(nextImageOriginalUrl("not a url", "https://ex.com/x")).toBeNull();
   });
 });
 

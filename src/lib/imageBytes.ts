@@ -60,6 +60,34 @@ export function needsImageProxy(src: string): boolean {
   }
 }
 
+/** Rewrite a Next.js image-optimizer URL (`…/_next/image?url=…&w=…&q=…`) into
+ *  the original asset's absolute URL, or null when `src` isn't one.
+ *
+ *  The optimizer picks AVIF/WebP from the Accept header, and feeds embed
+ *  `w=3840` requests — WKWebView thus decodes full-size multi-megapixel AVIFs
+ *  whose decoded bitmaps the image cache evicts under scroll/repaint pressure,
+ *  and the async re-decode is slow enough that the tile paints blank first:
+ *  the images flash on every scroll or click repaint. The reader's
+ *  translateZ / decoding=sync / height-cap mitigations can't hide a slow AVIF
+ *  re-decode, so the fix is to not decode AVIF at all: the original asset is a
+ *  plain PNG/JPEG (milliseconds to decode), and the optimizer never upscales,
+ *  so it is pixel-identical to what the `w=3840` request already returned.
+ *  `baseUrl` (the article's URL) resolves relative optimizer paths. */
+export function nextImageOriginalUrl(
+  src: string,
+  baseUrl: string | null,
+): string | null {
+  if (!src.includes("/_next/image?")) return null;
+  try {
+    const optimizer = new URL(src, baseUrl ?? undefined);
+    const raw = optimizer.searchParams.get("url");
+    if (!raw) return null;
+    return new URL(raw, optimizer.origin).href;
+  } catch {
+    return null;
+  }
+}
+
 /** Encode recovered image bytes as a self-contained data: URL.
  *
  *  Images that fail to load directly (hotlink-protected hosts) are refetched
