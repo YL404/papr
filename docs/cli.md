@@ -43,11 +43,11 @@ help[4]: Run `scout read <id>` to read an article's full text,...
 **Homebrew (macOS / Linux):**
 
 ```sh
-brew install l0ng-ai/papr/scout-cli
+brew install YL404/scout/scout-cli
 ```
 
 **Prebuilt binary** — download `scout-<target>.tar.gz` (`.zip` on Windows) from the
-[latest release](https://github.com/l0ng-ai/papr/releases/latest), unpack it, and
+[latest release](https://github.com/YL404/scout/releases/latest), unpack it, and
 drop `scout` anywhere on your `PATH`. The macOS builds are Developer ID signed and
 notarized.
 
@@ -69,10 +69,10 @@ supports the skill format.
 Install it with [`skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add https://github.com/l0ng-ai/papr/tree/main/skills/scout-rss
+npx skills add https://github.com/YL404/scout/tree/main/skills/scout-rss
 ```
 
-Or point it at the whole repo (`npx skills add l0ng-ai/papr`) and it will discover
+Or point it at the whole repo (`npx skills add YL404/scout`) and it will discover
 the skill. Either way it lands in your agent's skills directory ready to load.
 
 **Optional: an ambient SessionStart hook.** If you want the agent to be

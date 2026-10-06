@@ -36,7 +36,7 @@ the CLI can never drift apart.
 ### Install
 
 Grab the `.dmg` from the
-**[latest release](https://github.com/YL404/papr/releases/latest)** — macOS
+**[latest release](https://github.com/YL404/scout/releases/latest)** — macOS
 builds are Developer ID signed and notarized. Or build from source:
 
 ```sh
@@ -76,7 +76,7 @@ when an agent recognizes a feed-related task, so it costs nothing until you use
 it. Install it with [`skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add https://github.com/YL404/papr/tree/main/skills/scout-rss
+npx skills add https://github.com/YL404/scout/tree/main/skills/scout-rss
 ```
 
 Want the agent *proactively* aware of your feeds every conversation? `scout setup`
@@ -86,6 +86,6 @@ wires up an ambient SessionStart hook (Claude Code, Codex, OpenCode).
 
 | Platform | How |
 | --- | --- |
-| **macOS** | `scout-<target>.tar.gz` from the [latest release](https://github.com/YL404/papr/releases/latest), or `cargo build --release -p scout-cli` |
+| **macOS** | `scout-<target>.tar.gz` from the [latest release](https://github.com/YL404/scout/releases/latest), or `cargo build --release -p scout-cli` |
 
 > **Full command reference, agent setup, and install options → [docs/cli.md](docs/cli.md)**
