@@ -1,4 +1,4 @@
-//! papr — an agent-facing CLI over a local Papr RSS database.
+//! scout — an agent-facing CLI over a local Scout RSS database.
 //!
 //! Reads, searches, triages and refreshes your feeds from the shell, emitting
 //! token-efficient TOON on stdout. Designed to be driven by autonomous agents:
@@ -10,18 +10,18 @@ mod setup;
 mod toon;
 
 use clap::{Parser, Subcommand};
-use papr_core::db;
-use papr_core::ingestion::{fetch, parse, refresh};
-use papr_core::models::ArticleQuery;
+use scout_core::db;
+use scout_core::ingestion::{fetch, parse, refresh};
+use scout_core::models::ArticleQuery;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use toon::Doc;
 
-const APP_IDENTIFIER: &str = "com.yl404.papr";
-const DESCRIPTION: &str = "Read, search and triage your Papr RSS feeds from the shell.";
-const USER_AGENT: &str = concat!("papr-cli/", env!("CARGO_PKG_VERSION"));
+const APP_IDENTIFIER: &str = "com.yl404.scout";
+const DESCRIPTION: &str = "Read, search and triage your Scout RSS feeds from the shell.";
+const USER_AGENT: &str = concat!("scout-cli/", env!("CARGO_PKG_VERSION"));
 
 /// Body truncation budget for a single `read`, and the tighter one when reading
 /// several articles at once (keeping a batch affordable in tokens).
@@ -55,11 +55,11 @@ fn main() -> ExitCode {
 // ───────────────────────────── CLI surface ─────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "papr", version, about = DESCRIPTION, disable_help_subcommand = true)]
+#[command(name = "scout", version, about = DESCRIPTION, disable_help_subcommand = true)]
 struct Cli {
-    /// Path to the Papr SQLite database (defaults to the desktop app's data dir;
-    /// override with the PAPR_DB env var).
-    #[arg(long, global = true, env = "PAPR_DB", value_name = "PATH")]
+    /// Path to the Scout SQLite database (defaults to the desktop app's data dir;
+    /// override with the SCOUT_DB env var).
+    #[arg(long, global = true, env = "SCOUT_DB", value_name = "PATH")]
     db: Option<PathBuf>,
 
     #[command(subcommand)]
@@ -498,13 +498,13 @@ fn cmd_home(path: &Path) -> Result<String, AxiError> {
     // The home view shows only the most recent unread; if more exist, tell the
     // agent how to see the rest instead of leaving the count ambiguous.
     if !inbox_clear && unread > recent.len() as i64 {
-        help.push(format!("Run `papr list` to see all {unread} unread"));
+        help.push(format!("Run `scout list` to see all {unread} unread"));
     }
     help.extend([
-        "Run `papr read <id>` to read an article's full text".into(),
-        "Run `papr list --feed <id>` to list one feed's articles".into(),
-        "Run `papr search \"<query>\"` to search every article".into(),
-        "Run `papr refresh` to fetch new articles".into(),
+        "Run `scout read <id>` to read an article's full text".into(),
+        "Run `scout list --feed <id>` to list one feed's articles".into(),
+        "Run `scout search \"<query>\"` to search every article".into(),
+        "Run `scout refresh` to fetch new articles".into(),
     ]);
     d.help(help);
     Ok(d.into_toon())
@@ -518,7 +518,7 @@ fn cmd_feeds(path: &Path) -> Result<String, AxiError> {
     if feeds.is_empty() {
         let mut d = Doc::new();
         d.set("feeds", json!([]));
-        d.help(vec!["Run `papr subscribe <url>` to add your first feed".into()]);
+        d.help(vec!["Run `scout subscribe <url>` to add your first feed".into()]);
         return Ok(d.into_toon());
     }
 
@@ -545,9 +545,9 @@ fn cmd_feeds(path: &Path) -> Result<String, AxiError> {
     d.set("by_folder", Value::Object(groups));
 
     d.help(vec![
-        "Run `papr list --feed <id>` to list a feed's articles".into(),
-        "Run `papr refresh --feed <id>` to fetch one feed".into(),
-        "Run `papr subscribe <url>` to add a feed".into(),
+        "Run `scout list --feed <id>` to list a feed's articles".into(),
+        "Run `scout refresh --feed <id>` to fetch one feed".into(),
+        "Run `scout subscribe <url>` to add a feed".into(),
     ]);
     Ok(d.into_toon())
 }
@@ -581,19 +581,19 @@ fn cmd_list(path: &Path, args: ListArgs) -> Result<String, AxiError> {
     d.set("articles", article_rows(&rows, &extra));
 
     let help = if rows.is_empty() {
-        vec!["Run `papr refresh` to fetch new articles".into()]
+        vec!["Run `scout refresh` to fetch new articles".into()]
     } else {
         let mut help = vec![
-            "Run `papr read <id>` to read an article's full text".into(),
-            "Run `papr mark read <id>` to mark an article read".into(),
+            "Run `scout read <id>` to read an article's full text".into(),
+            "Run `scout mark read <id>` to mark an article read".into(),
         ];
         if offset + (shown as i64) < total {
             let next = offset + limit;
             let filters = replay_filters(&args);
             let cmd = if filters.is_empty() {
-                format!("papr list --offset {next}")
+                format!("scout list --offset {next}")
             } else {
-                format!("papr list --offset {next} {filters}")
+                format!("scout list --offset {next} {filters}")
             };
             help.push(format!("Run `{cmd}` for the next page"));
         }
@@ -631,8 +631,8 @@ fn cmd_read(path: &Path, args: ReadArgs) -> Result<String, AxiError> {
         return Err(AxiError::usage(
             "read needs an article id or a filter",
             vec![
-                "Run `papr read <id> [<id>...]` to read by id".into(),
-                "Run `papr read --feed <id> --limit 5` to read a feed's latest".into(),
+                "Run `scout read <id> [<id>...]` to read by id".into(),
+                "Run `scout read --feed <id> --limit 5` to read a feed's latest".into(),
             ],
         ));
     };
@@ -640,7 +640,7 @@ fn cmd_read(path: &Path, args: ReadArgs) -> Result<String, AxiError> {
     if ids.is_empty() {
         let mut d = Doc::new();
         d.set("articles", json!([]));
-        d.help(vec!["Run `papr list` to find article ids".into()]);
+        d.help(vec!["Run `scout list` to find article ids".into()]);
         return Ok(d.into_toon());
     }
 
@@ -686,7 +686,7 @@ fn cmd_read(path: &Path, args: ReadArgs) -> Result<String, AxiError> {
     }
     d.set("articles", Value::Array(articles));
     if any_truncated && !args.full {
-        d.help(vec!["Run `papr read <id> --full` to see the complete text".into()]);
+        d.help(vec!["Run `scout read <id> --full` to see the complete text".into()]);
     }
     Ok(d.into_toon())
 }
@@ -703,9 +703,9 @@ fn cmd_search(path: &Path, query: &str, limit: i64) -> Result<String, AxiError> 
         .collect();
     d.set("matches", Value::Array(rows));
     d.help(vec![if hits.is_empty() {
-        "Run `papr refresh` to fetch new articles, then search again".into()
+        "Run `scout refresh` to fetch new articles, then search again".into()
     } else {
-        "Run `papr read <id>` to read a match in full".into()
+        "Run `scout read <id>` to read a match in full".into()
     }]);
     Ok(d.into_toon())
 }
@@ -753,7 +753,7 @@ fn cmd_tags(path: &Path) -> Result<String, AxiError> {
         .collect();
     d.set("tags", Value::Array(rows));
     if !tags.is_empty() {
-        d.help(vec!["Run `papr list --tag <id>` to list a tag's articles".into()]);
+        d.help(vec!["Run `scout list --tag <id>` to list a tag's articles".into()]);
     }
     Ok(d.into_toon())
 }
@@ -793,12 +793,12 @@ async fn cmd_subscribe(path: &Path, url: &str, folder: Option<i64>) -> Result<St
     if let Some(existing) = db::find_feed_by_url(&conn, &feed_url).map_err(db_err)? {
         let mut d = Doc::new();
         d.set("ok", format!("feed #{existing} already subscribed (no-op)"));
-        d.help(vec![format!("Run `papr list --feed {existing}` to read it")]);
+        d.help(vec![format!("Run `scout list --feed {existing}` to read it")]);
         return Ok(d.into_toon());
     }
 
     let source_type =
-        parse::refine_source_type(papr_core::models::SourceType::Rss, &parsed, &feed_url);
+        parse::refine_source_type(scout_core::models::SourceType::Rss, &parsed, &feed_url);
     let title = parsed
         .title
         .clone()
@@ -841,8 +841,8 @@ async fn cmd_subscribe(path: &Path, url: &str, folder: Option<i64>) -> Result<St
     }
     d.set("feed", Value::Object(feed));
     d.help(vec![
-        format!("Run `papr list --feed {feed_id}` to read it"),
-        format!("Run `papr refresh --feed {feed_id}` to fetch more later"),
+        format!("Run `scout list --feed {feed_id}` to read it"),
+        format!("Run `scout refresh --feed {feed_id}` to fetch more later"),
     ]);
     Ok(d.into_toon())
 }
@@ -864,7 +864,7 @@ async fn cmd_refresh(
 
     // Progress is diagnostic — it goes to stderr so stdout stays pure data.
     let summary = refresh::refresh_core(&dbm, &client, scope, |event| {
-        use papr_core::models::RefreshProgress::*;
+        use scout_core::models::RefreshProgress::*;
         match event {
             Started { total } => eprintln!("refreshing {total} feed(s)…"),
             // Per-source detail: the CLI logs outcomes, and a start line per
@@ -889,7 +889,7 @@ async fn cmd_refresh(
         "new": summary.new_articles,
     }));
     if summary.new_articles > 0 {
-        d.help(vec!["Run `papr list` to see what's new".into()]);
+        d.help(vec!["Run `scout list` to see what's new".into()]);
     }
     Ok(d.into_toon())
 }
@@ -906,7 +906,7 @@ fn cmd_unsubscribe(path: &Path, id: i64, yes: bool) -> Result<String, AxiError> 
     let Some(title) = feed_title(&conn, id) else {
         return ok_line(format!("feed: #{id} not found (no-op)"));
     };
-    require_yes(yes, "unsubscribe", &format!("papr unsubscribe {id}"))?;
+    require_yes(yes, "unsubscribe", &format!("scout unsubscribe {id}"))?;
     db::delete_feed(&conn, id).map_err(db_err)?;
     ok_line(format!("unsubscribed: #{id} {title}"))
 }
@@ -937,14 +937,14 @@ async fn cmd_extract(path: &Path, id: i64) -> Result<String, AxiError> {
         .await
         .map_err(|e| clean_err(&format!("could not fetch {url}"), e))?;
     let html = String::from_utf8_lossy(&bytes);
-    let cleaned = papr_core::extraction::extract_article(&html, &final_url)
+    let cleaned = scout_core::extraction::extract_article(&html, &final_url)
         .map_err(|e| AxiError::runtime(format!("extraction failed: {e}")))?;
-    let image = papr_core::extraction::lead_image(&html, &final_url);
+    let image = scout_core::extraction::lead_image(&html, &final_url);
     db::set_extracted_html(&conn, id, &cleaned, image.as_deref()).map_err(db_err)?;
-    let chars = papr_core::sanitize::html_to_text(&cleaned).chars().count();
+    let chars = scout_core::sanitize::html_to_text(&cleaned).chars().count();
     let mut d = Doc::new();
     d.set("extracted", json!({ "id": id, "chars": chars }));
-    d.help(vec![format!("Run `papr read {id} --full` to read the extracted text")]);
+    d.help(vec![format!("Run `scout read {id} --full` to read the extracted text")]);
     Ok(d.into_toon())
 }
 
@@ -962,7 +962,7 @@ fn cmd_folders(path: &Path) -> Result<String, AxiError> {
     let mut d = Doc::new();
     d.set("folders", Value::Array(rows));
     if !folders.is_empty() {
-        d.help(vec!["Run `papr list --folder <id>` to list a folder's articles".into()]);
+        d.help(vec!["Run `scout list --folder <id>` to list a folder's articles".into()]);
     }
     Ok(d.into_toon())
 }
@@ -979,7 +979,7 @@ fn cmd_folder(path: &Path, cmd: FolderCmd) -> Result<String, AxiError> {
             ok_line(format!("folder: #{id} renamed to {name}"))
         }
         FolderCmd::Delete { id, yes } => {
-            require_yes(yes, "folder delete", &format!("papr folder delete {id}"))?;
+            require_yes(yes, "folder delete", &format!("scout folder delete {id}"))?;
             db::delete_folder(&conn, id).map_err(db_err)?;
             ok_line(format!("folder: #{id} deleted"))
         }
@@ -1028,7 +1028,7 @@ fn cmd_tag(path: &Path, cmd: TagCmd) -> Result<String, AxiError> {
             ok_line(format!("tag: #{id} colour {color}"))
         }
         TagCmd::Delete { id, yes } => {
-            require_yes(yes, "tag delete", &format!("papr tag delete {id}"))?;
+            require_yes(yes, "tag delete", &format!("scout tag delete {id}"))?;
             db::delete_tag(&conn, id).map_err(db_err)?;
             ok_line(format!("tag: #{id} deleted"))
         }
@@ -1052,7 +1052,7 @@ fn cmd_opml(path: &Path, cmd: OpmlCmd) -> Result<String, AxiError> {
             let content = std::fs::read_to_string(&file).map_err(|e| {
                 AxiError::runtime(format!("could not read {}: {e}", file.display()))
             })?;
-            let imported = papr_core::opml::parse(&content)
+            let imported = scout_core::opml::parse(&content)
                 .map_err(|e| AxiError::runtime(format!("invalid OPML: {e}")))?;
             let mut added = 0usize;
             let mut skipped = 0usize;
@@ -1071,7 +1071,7 @@ fn cmd_opml(path: &Path, cmd: OpmlCmd) -> Result<String, AxiError> {
                     None,
                     &f.title,
                     None,
-                    papr_core::models::SourceType::Rss,
+                    scout_core::models::SourceType::Rss,
                     folder_id,
                 )
                 .map_err(db_err)?;
@@ -1080,14 +1080,14 @@ fn cmd_opml(path: &Path, cmd: OpmlCmd) -> Result<String, AxiError> {
             let mut d = Doc::new();
             d.set("import", json!({ "added": added, "skipped": skipped }));
             if added > 0 {
-                d.help(vec!["Run `papr refresh` to fetch the imported feeds".into()]);
+                d.help(vec!["Run `scout refresh` to fetch the imported feeds".into()]);
             }
             Ok(d.into_toon())
         }
         OpmlCmd::Export { out } => {
             let conn = open_ro(path)?;
             let feeds = db::feeds_for_export(&conn).map_err(db_err)?;
-            let xml = papr_core::opml::build(&feeds)
+            let xml = scout_core::opml::build(&feeds)
                 .map_err(|e| AxiError::runtime(format!("OPML build failed: {e}")))?;
             match out {
                 Some(file) => {
@@ -1153,20 +1153,20 @@ fn cmd_admin(path: &Path, cmd: AdminCmd) -> Result<String, AxiError> {
             if days < 0 {
                 return Err(AxiError::usage(
                     format!("cleanup window must be >= 0 days, got {days}"),
-                    vec!["Run `papr admin cleanup <days>` with a non-negative day count".into()],
+                    vec!["Run `scout admin cleanup <days>` with a non-negative day count".into()],
                 ));
             }
-            require_yes(yes, "cleanup", &format!("papr admin cleanup {days}"))?;
+            require_yes(yes, "cleanup", &format!("scout admin cleanup {days}"))?;
             let n = db::cleanup_old_articles(&conn, days).map_err(db_err)?;
             ok_line(format!("cleanup: removed {n} article(s) older than {days} days"))
         }
         AdminCmd::Vacuum { yes } => {
-            require_yes(yes, "vacuum", "papr admin vacuum")?;
+            require_yes(yes, "vacuum", "scout admin vacuum")?;
             conn.execute_batch("VACUUM").map_err(|e| AxiError::runtime(format!("vacuum: {e}")))?;
             ok_line("vacuum: database compacted".into())
         }
         AdminCmd::Reset { yes } => {
-            require_yes(yes, "settings reset", "papr admin reset")?;
+            require_yes(yes, "settings reset", "scout admin reset")?;
             db::reset_settings(&conn).map_err(db_err)?;
             ok_line("settings: reset to defaults".into())
         }
@@ -1227,7 +1227,7 @@ fn parse_fields(spec: &str) -> Result<Vec<ExtraField>, AxiError> {
 /// next action without a follow-up call — plus any `extra` columns requested
 /// via `--fields`. Returns a JSON array the encoder lays out as a tabular TOON
 /// array (uniform keys across rows keep it tabular).
-fn article_rows(rows: &[papr_core::models::ArticleSummary], extra: &[ExtraField]) -> Value {
+fn article_rows(rows: &[scout_core::models::ArticleSummary], extra: &[ExtraField]) -> Value {
     Value::Array(
         rows.iter()
             .map(|a| {
@@ -1256,7 +1256,7 @@ fn article_rows(rows: &[papr_core::models::ArticleSummary], extra: &[ExtraField]
     )
 }
 
-fn feed_rows(feeds: &[&papr_core::models::Feed]) -> Value {
+fn feed_rows(feeds: &[&scout_core::models::Feed]) -> Value {
     Value::Array(
         feeds
             .iter()
@@ -1272,7 +1272,7 @@ fn feed_rows(feeds: &[&papr_core::models::Feed]) -> Value {
     )
 }
 
-fn summary_flags(a: &papr_core::models::ArticleSummary) -> String {
+fn summary_flags(a: &scout_core::models::ArticleSummary) -> String {
     let mut v = vec![if a.is_read { "read" } else { "unread" }];
     if a.is_starred {
         v.push("star");
@@ -1283,7 +1283,7 @@ fn summary_flags(a: &papr_core::models::ArticleSummary) -> String {
     v.join(".")
 }
 
-fn detail_flags(a: &papr_core::models::ArticleDetail) -> String {
+fn detail_flags(a: &scout_core::models::ArticleDetail) -> String {
     let mut v = vec![if a.is_read { "read" } else { "unread" }];
     if a.is_starred {
         v.push("star");
@@ -1337,7 +1337,7 @@ fn count_articles(
     conn: &Connection,
     query: &ArticleQuery,
     unread_only: bool,
-) -> papr_core::error::AppResult<i64> {
+) -> scout_core::error::AppResult<i64> {
     let unread = if unread_only { " AND is_read = 0" } else { "" };
     let (sql, param): (String, Option<i64>) = match query {
         ArticleQuery::All | ArticleQuery::Unread => {
@@ -1460,10 +1460,10 @@ fn ensure_db(path: &Path) -> Result<(), AxiError> {
         return Ok(());
     }
     Err(AxiError::runtime_help(
-        format!("no Papr database at {}", collapse_home(&path.display().to_string())),
+        format!("no Scout database at {}", collapse_home(&path.display().to_string())),
         vec![
-            "Install and launch Papr to create it, or".into(),
-            "Run any papr command with `--db <path>` / set PAPR_DB to point at one".into(),
+            "Install and launch Scout to create it, or".into(),
+            "Run any scout command with `--db <path>` / set SCOUT_DB to point at one".into(),
         ],
     ))
 }
@@ -1472,7 +1472,13 @@ fn db_path(cli: &Cli) -> Result<PathBuf, AxiError> {
     if let Some(p) = &cli.db {
         return Ok(p.clone());
     }
-    Ok(app_data_dir()?.join(APP_IDENTIFIER).join("papr.db"))
+    if let Ok(val) = std::env::var("SCOUT_DB") {
+        if !val.is_empty() {
+            return Ok(PathBuf::from(val));
+        }
+    }
+    let data_base = app_data_dir()?;
+    Ok(data_base.join(APP_IDENTIFIER).join("scout.db"))
 }
 
 /// The platform application-data directory Tauri stores the DB under.
@@ -1502,14 +1508,14 @@ fn app_data_dir() -> Result<PathBuf, AxiError> {
 fn home_err() -> AxiError {
     AxiError::runtime_help(
         "could not resolve the home directory",
-        vec!["Set PAPR_DB or pass --db <path> to the database".into()],
+        vec!["Set SCOUT_DB or pass --db <path> to the database".into()],
     )
 }
 
 fn current_exe_path() -> String {
     std::env::current_exe()
         .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "papr".into())
+        .unwrap_or_else(|_| "scout".into())
 }
 
 /// Collapse the user's home prefix to `~` for compact, portable display.
@@ -1556,7 +1562,7 @@ impl AxiError {
 
 /// Translate a database/core error into a runtime AxiError, discarding noisy
 /// internals — the agent gets actionable meaning, not a stack trace.
-fn db_err(e: papr_core::error::AppError) -> AxiError {
+fn db_err(e: scout_core::error::AppError) -> AxiError {
     AxiError::runtime(format!("{e}"))
 }
 
@@ -1564,8 +1570,8 @@ fn db_err(e: papr_core::error::AppError) -> AxiError {
 /// `context` describing the operation. Raw `reqwest` failures (which embed the
 /// internal endpoint URL and a verbose chain) collapse to a short phrase, so no
 /// dependency name or internal path leaks into the agent's output.
-fn clean_err(context: &str, e: papr_core::error::AppError) -> AxiError {
-    use papr_core::error::AppError;
+fn clean_err(context: &str, e: scout_core::error::AppError) -> AxiError {
+    use scout_core::error::AppError;
     let detail = match &e {
         AppError::Http(h) => {
             if h.is_timeout() {
@@ -1597,8 +1603,8 @@ mod tests {
     use clap::CommandFactory;
 
     /// CI guard against the installable skill drifting from the actual CLI
-    /// surface: every command must be documented as a `papr <name>` example, and
-    /// every `papr <name>` the doc references must be a real command (so a
+    /// surface: every command must be documented as a `scout <name>` example, and
+    /// every `scout <name>` the doc references must be a real command (so a
     /// removed command left behind in the skill fails the build).
     #[test]
     fn skill_doc_matches_cli_commands() {
@@ -1606,28 +1612,28 @@ mod tests {
             .get_subcommands()
             .map(|c| c.get_name().to_string())
             .collect();
-        let skill = include_str!("../../../skills/papr-rss/SKILL.md");
+        let skill = include_str!("../../../skills/scout-rss/SKILL.md");
 
-        // Forward: every subcommand appears as a `papr <name>` invocation.
+        // Forward: every subcommand appears as a `scout <name>` invocation.
         for n in &names {
             assert!(
-                skill.contains(&format!("papr {n}")),
-                "SKILL.md has no `papr {n}` example — command is undocumented"
+                skill.contains(&format!("scout {n}")),
+                "SKILL.md has no `scout {n}` example — command is undocumented"
             );
         }
-        // Reverse: every `papr <token>` the doc shows is a real command.
-        for span in skill.split("papr ").skip(1) {
+        // Reverse: every `scout <token>` the doc shows is a real command.
+        for span in skill.split("scout ").skip(1) {
             let token: String = span
                 .chars()
                 .take_while(|c| c.is_ascii_alphanumeric() || *c == '-')
                 .collect();
-            // Skip bare `papr` (the home view) and any `papr --flag` usage.
+            // Skip bare `scout` (the home view) and any `scout --flag` usage.
             if token.is_empty() || token.starts_with('-') {
                 continue;
             }
             assert!(
                 names.contains(&token),
-                "SKILL.md references `papr {token}`, which is not a CLI command"
+                "SKILL.md references `scout {token}`, which is not a CLI command"
             );
         }
     }

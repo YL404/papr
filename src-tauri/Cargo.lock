@@ -3320,8 +3320,8 @@ dependencies = [
 ]
 
 [[package]]
-name = "papr"
-version = "0.15.1"
+name = "scout"
+version = "0.16.0"
 dependencies = [
  "ammonia",
  "anyhow",

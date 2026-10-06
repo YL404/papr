@@ -1,18 +1,18 @@
 <div align="center">
 
-# Papr
+# Scout
 
 **A fast, native RSS reader for macOS — and a CLI your AI agent can actually drive.**
 
 </div>
 
-Papr is two front-ends over **one local database**:
+Scout is two front-ends over **one local database**:
 
 - **A desktop reader** — fast, native, offline-first. No account, no cloud.
-- **`papr`, an agent-facing CLI** — so an autonomous agent (Claude Code, Codex,
+- **`scout`, an agent-facing CLI** — so an autonomous agent (Claude Code, Codex,
   OpenCode…) can read, search and triage your feeds straight from the shell.
 
-Both read the same database through the shared `papr-core` crate, so the app and
+Both read the same database through the shared `scout-core` crate, so the app and
 the CLI can never drift apart.
 
 > A fork of [l0ng-ai/papr](https://github.com/l0ng-ai/papr), trimmed to a
@@ -45,9 +45,9 @@ pnpm install && pnpm tauri build
 
 ---
 
-## `papr` — your feeds, handed to your agent
+## `scout` — your feeds, handed to your agent
 
-`papr` is a command-line companion built **for autonomous agents** to drive over
+`scout` is a command-line companion built **for autonomous agents** to drive over
 the shell. Point your agent at it and it can work your feeds with no GUI:
 
 - **Read** — `feeds`, `list`, `read`, full-text `search`
@@ -55,37 +55,37 @@ the shell. Point your agent at it and it can work your feeds with no GUI:
 - **Manage** — subscriptions, folders, tags, rules, highlights, OPML
 - **Sync** — FreshRSS / Miniflux
 
-Run bare `papr` and it prints your unread dashboard *plus the next useful
+Run bare `scout` and it prints your unread dashboard *plus the next useful
 commands*, so the agent orients with zero manual. Output is
 [TOON](https://toonformat.dev) — ~40% fewer tokens than JSON — with definitive
 counts and structured exit codes.
 
 ```console
-$ papr
+$ scout
 unread: 206   starred: 17   later: 0   feeds: 15
 articles[10]{id,feed,title,flags,date}:
    3664,V2EX,[Java] 使用 kkRepo 搭建 Maven 私服,unread.star,"2026-06-25"
    ...
-help[4]: Run `papr read <id>` to read an article's full text, ...
+help[4]: Run `scout read <id>` to read an article's full text, ...
 ```
 
 ### Hand it to your agent — one line
 
-The bundled **[`papr-rss` skill](skills/papr-rss/SKILL.md)** loads *on demand*
+The bundled **[`scout-rss` skill](skills/scout-rss/SKILL.md)** loads *on demand*
 when an agent recognizes a feed-related task, so it costs nothing until you use
 it. Install it with [`skills`](https://github.com/vercel-labs/skills):
 
 ```sh
-npx skills add https://github.com/YL404/papr/tree/main/skills/papr-rss
+npx skills add https://github.com/YL404/papr/tree/main/skills/scout-rss
 ```
 
-Want the agent *proactively* aware of your feeds every conversation? `papr setup`
+Want the agent *proactively* aware of your feeds every conversation? `scout setup`
 wires up an ambient SessionStart hook (Claude Code, Codex, OpenCode).
 
 ### Install the CLI
 
 | Platform | How |
 | --- | --- |
-| **macOS** | `papr-<target>.tar.gz` from the [latest release](https://github.com/YL404/papr/releases/latest), or `cargo build --release -p papr-cli` |
+| **macOS** | `scout-<target>.tar.gz` from the [latest release](https://github.com/YL404/papr/releases/latest), or `cargo build --release -p scout-cli` |
 
 > **Full command reference, agent setup, and install options → [docs/cli.md](docs/cli.md)**

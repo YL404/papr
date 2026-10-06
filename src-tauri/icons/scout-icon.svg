@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <!-- Background Gradient -->
+    <linearGradient id="scoutBg" x1="120" y1="80" x2="904" y2="944" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#141824"/>
+      <stop offset="50%" stop-color="#0E1017"/>
+      <stop offset="100%" stop-color="#06070A"/>
+    </linearGradient>
+
+    <!-- S-Signal Ribbon Gradient -->
+    <linearGradient id="scoutRibbon" x1="260" y1="200" x2="780" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#4EFA8B"/>
+      <stop offset="28%" stop-color="#2ED573"/>
+      <stop offset="65%" stop-color="#00D2D3"/>
+      <stop offset="100%" stop-color="#00A8FF"/>
+    </linearGradient>
+
+    <!-- Glowing Node Top Gradient -->
+    <radialGradient id="nodeTopGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#4EFA8B"/>
+      <stop offset="100%" stop-color="#2ED573"/>
+    </radialGradient>
+
+    <!-- Glowing Node Bottom Gradient -->
+    <radialGradient id="nodeBottomGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="40%" stop-color="#00D2D3"/>
+      <stop offset="100%" stop-color="#00A8FF"/>
+    </radialGradient>
+  </defs>
+
+  <!-- macOS Squircle Background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="224" ry="224" fill="url(#scoutBg)"/>
+
+  <!-- Subtle Rim Light -->
+  <rect x="2" y="2" width="1020" height="1020" rx="222" ry="222" fill="none" stroke="rgba(255,255,255,0.12)" stroke-width="4"/>
+
+  <!-- Concentric Reticle / Feed Rings in background -->
+  <circle cx="512" cy="512" r="380" stroke="rgba(255,255,255,0.03)" stroke-width="12" fill="none"/>
+  <circle cx="512" cy="512" r="260" stroke="rgba(255,255,255,0.04)" stroke-width="8" stroke-dasharray="16 16" fill="none"/>
+  <circle cx="512" cy="512" r="140" stroke="rgba(255,255,255,0.03)" stroke-width="6" fill="none"/>
+
+  <!-- Echoing RSS Wave Arcs (top-right quadrant) -->
+  <g fill="none" stroke="url(#scoutRibbon)" stroke-linecap="round">
+    <path d="M 620 330 A 240 240 0 0 1 730 440" stroke-width="20" opacity="0.4"/>
+    <path d="M 680 250 A 350 350 0 0 1 830 400" stroke-width="18" opacity="0.25"/>
+  </g>
+
+  <!-- Soft Ambient Glow underneath the Monogram S -->
+  <path d="M 680 300 
+           C 600 210, 400 210, 340 320 
+           C 280 430, 400 480, 512 520 
+           C 624 560, 740 610, 680 730 
+           C 630 830, 420 830, 340 740" 
+        fill="none" 
+        stroke="url(#scoutRibbon)" 
+        stroke-width="104" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"
+        opacity="0.18"/>
+
+  <!-- Main Monogram 'S' Continuous Wave -->
+  <path d="M 680 300 
+           C 600 210, 400 210, 340 320 
+           C 280 430, 400 480, 512 520 
+           C 624 560, 740 610, 680 730 
+           C 630 830, 420 830, 340 740" 
+        fill="none" 
+        stroke="url(#scoutRibbon)" 
+        stroke-width="76" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+
+  <!-- Telemetry / Feed Signal Pulse Nodes -->
+  <!-- Top Node Outer Aura & Core -->
+  <circle cx="730" cy="230" r="44" fill="#4EFA8B" opacity="0.2"/>
+  <circle cx="730" cy="230" r="30" fill="url(#nodeTopGrad)"/>
+  <circle cx="730" cy="230" r="12" fill="#FFFFFF"/>
+
+  <!-- Secondary Satellite Pulse -->
+  <circle cx="820" cy="300" r="20" fill="#2ED573" opacity="0.8"/>
+  <circle cx="820" cy="300" r="8" fill="#FFFFFF"/>
+
+  <!-- Bottom Node Outer Aura & Core -->
+  <circle cx="280" cy="770" r="44" fill="#00A8FF" opacity="0.2"/>
+  <circle cx="280" cy="770" r="30" fill="url(#nodeBottomGrad)"/>
+  <circle cx="280" cy="770" r="12" fill="#FFFFFF"/>
+</svg>

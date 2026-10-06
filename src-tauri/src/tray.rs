@@ -15,7 +15,7 @@ use tauri::menu::{Menu, MenuEvent, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, Wry};
 
-const TRAY_ID: &str = "papr-tray";
+const TRAY_ID: &str = "scout-tray";
 const ICON: &[u8] = include_bytes!("../icons/tray.png");
 
 /// Format an elapsed-time string for a stored `datetime('now')` timestamp.
@@ -106,25 +106,25 @@ fn labels(lang: &str, unread: i64, last: Option<&str>) -> Labels {
     };
     let (open, refresh, mark_all, settings, quit) = match lang {
         "zh" => (
-            "打开 Papr",
+            "打开 Scout",
             "立即刷新全部",
             "全部标为已读",
             "设置…",
-            "退出 Papr",
+            "退出 Scout",
         ),
         "ja" => (
-            "Papr を開く",
+            "Scout を開く",
             "今すぐすべて更新",
             "すべて既読にする",
             "設定…",
-            "Papr を終了",
+            "Scout を終了",
         ),
         _ => (
-            "Open Papr",
+            "Open Scout",
             "Refresh All Now",
             "Mark All as Read",
             "Settings…",
-            "Quit Papr",
+            "Quit Scout",
         ),
     };
     Labels {
@@ -217,7 +217,7 @@ pub fn build(
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(ICON)?)
         .icon_as_template(true)
-        .tooltip("Papr")
+        .tooltip("Scout")
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(handle_event)
@@ -258,10 +258,10 @@ pub async fn refresh(app: &AppHandle) {
         // Pass an empty string rather than `None` to clear the count: on
         // macOS `set_title(None)` leaves the previous title in place, so a
         // drop to zero would otherwise keep showing the stale number.
-        let _ = tray.set_title(Some(if unread > 0 {
-            unread.to_string()
+        let _ = tray.set_title(if unread > 0 {
+            Some(unread.to_string())
         } else {
-            String::new()
-        }));
+            None
+        });
     });
 }

@@ -1,10 +1,10 @@
 //! The desktop refresh scheduler: a Tauri-aware wrapper around the UI-free
-//! [`papr_core::ingestion::refresh::refresh_core`].
+//! [`scout_core::ingestion::refresh::refresh_core`].
 //!
 //! `refresh_all` adds what only the desktop app needs — single-flight locking,
 //! a `refresh-progress` event for the webview, new-article notifications,
 //! FreshRSS sync and tray/badge updates — while the actual fetch/parse/ingest
-//! pipeline lives in `papr-core` so the agent CLI can drive the same code
+//! pipeline lives in `scout-core` so the agent CLI can drive the same code
 //! headlessly.
 
 use crate::error::AppResult;

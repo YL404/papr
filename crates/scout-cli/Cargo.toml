@@ -1,15 +1,15 @@
 [package]
-name = "papr-cli"
-version = "0.15.1"
+name = "scout-cli"
+version = "0.16.0"
 edition = "2021"
-description = "papr — an agent-facing CLI over your Papr RSS feeds: read, search, triage and refresh from the shell."
+description = "scout — an agent-facing CLI over your Scout RSS feeds: read, search, triage and refresh from the shell."
 
 [[bin]]
-name = "papr"
+name = "scout"
 path = "src/main.rs"
 
 [dependencies]
-papr-core = { path = "../papr-core" }
+scout-core = { path = "../scout-core" }
 rusqlite.workspace = true
 reqwest.workspace = true
 tokio.workspace = true

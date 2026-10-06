@@ -3,7 +3,7 @@
 //! A child webview overlaid on the main window's reading area, so feeds that
 //! only ship a summary — or sites that refuse to be framed via
 //! `X-Frame-Options` (V2EX, most news/community sites) — still render inside
-//! Papr. An `<iframe>` cannot do this: the remote server rejects the frame and
+//! Scout. An `<iframe>` cannot do this: the remote server rejects the frame and
 //! the browser gives no reliable failure signal across origins. A native child
 //! webview is a real WebView, so framing headers do not apply.
 //!

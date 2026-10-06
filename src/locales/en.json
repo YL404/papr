@@ -48,7 +48,7 @@
   },
   "addFeed": {
     "title": "Add feed",
-    "hint": "Paste a feed URL, a website URL, or a YouTube / Reddit / Mastodon link \u2014 Papr figures out the rest.",
+    "hint": "Paste a feed URL, a website URL, or a YouTube / Reddit / Mastodon link \u2014 Scout figures out the rest.",
     "urlLabel": "Feed or site URL",
     "folderLabel": "Folder",
     "noFolder": "No folder",
@@ -246,7 +246,7 @@
       "markReadOnListScrollDesc": "While browsing down the list, articles that leave the viewport are marked read after a short delay",
       "startup": "Startup",
       "launchAtLogin": "Launch at login",
-      "launchAtLoginDesc": "Start Papr automatically in the background after login",
+      "launchAtLoginDesc": "Start Scout automatically in the background after login",
       "startupView": "Open on startup",
       "startupViewDesc": "The view shown by default next time you open the app",
       "startupAll": "All articles",

@@ -159,12 +159,12 @@ export type RefreshProgress =
 
 /** An LLM API family Settings → AI can configure. The wire format each one
  *  speaks (Anthropic messages vs OpenAI-compatible chat completions) is
- *  decided in `papr_core::ai`. */
+ *  decided in `scout_core::ai`. */
 export type AiProviderKind = "anthropic" | "openai" | "deepseek";
 
 /** One provider account: a named credential set plus the models offered
  *  under it. Persisted as JSON in the `ai_providers` setting (mirrors
- *  `papr_core::ai::ProviderProfile`). */
+ *  `scout_core::ai::ProviderProfile`). */
 export interface AiProviderEntry {
   id: string;
   /** User-editable label, shown in Settings only. */

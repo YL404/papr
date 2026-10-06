@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Papr",
-  "version": "0.15.1",
-  "identifier": "com.yl404.papr",
-  "mainBinaryName": "papr-desktop",
+  "productName": "Scout",
+  "version": "0.16.0",
+  "identifier": "com.yl404.scout",
+  "mainBinaryName": "scout-desktop",
   "build": {
     "beforeDevCommand": "pnpm dev",
     "devUrl": "http://localhost:1430",
@@ -14,7 +14,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "Papr",
+        "title": "Scout",
         "width": 1280,
         "height": 820,
         "minWidth": 920,

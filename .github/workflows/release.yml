@@ -66,23 +66,23 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: "Papr ${{ github.ref_name }}"
+          releaseName: "Scout ${{ github.ref_name }}"
           releaseBody: "See the assets below to download and install this version."
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}
 
       # ---------------------------------------------------------------------
-      # papr CLI — built from the same workspace, signed/notarized on macOS,
+      # scout CLI — built from the same workspace, signed/notarized on macOS,
       # and uploaded to the same draft release tauri-action just created.
       # ---------------------------------------------------------------------
       - name: Add Rust target for the CLI
         run: rustup target add ${{ matrix.cli_target }}
 
-      - name: Build papr CLI
-        run: cargo build --release -p papr-cli --target ${{ matrix.cli_target }}
+      - name: Build scout CLI
+        run: cargo build --release -p scout-cli --target ${{ matrix.cli_target }}
 
-      - name: Sign & notarize papr CLI (macOS)
+      - name: Sign & notarize scout CLI (macOS)
         if: matrix.platform == 'macos-latest'
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
@@ -94,16 +94,16 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         run: |
           set -euo pipefail
-          BIN="target/${{ matrix.cli_target }}/release/papr"
+          BIN="target/${{ matrix.cli_target }}/release/scout"
 
           # tauri-action tears down its own keychain after its step, so stand up
           # a fresh one to sign the bare CLI binary with the Developer ID cert.
-          KEYCHAIN="$RUNNER_TEMP/papr-cli.keychain-db"
+          KEYCHAIN="$RUNNER_TEMP/scout-cli.keychain-db"
           CERT_PATH="$RUNNER_TEMP/cert.p12"
           # Scrub the decoded cert + temp keychain on any exit path.
           cleanup() {
             security delete-keychain "$KEYCHAIN" >/dev/null 2>&1 || true
-            rm -f "$CERT_PATH" "$RUNNER_TEMP/papr-cli.zip"
+            rm -f "$CERT_PATH" "$RUNNER_TEMP/scout-cli.zip"
           }
           trap cleanup EXIT
           security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
@@ -124,8 +124,8 @@ jobs:
           # Notarize. A bare executable can't be stapled (stapling needs an
           # app/dmg/pkg container), so we submit a zip of the binary; the ticket
           # binds to the code signature's cdhash and Gatekeeper checks it online.
-          ditto -c -k "$BIN" "$RUNNER_TEMP/papr-cli.zip"
-          xcrun notarytool submit "$RUNNER_TEMP/papr-cli.zip" \
+          ditto -c -k "$BIN" "$RUNNER_TEMP/scout-cli.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/scout-cli.zip" \
             --apple-id "$APPLE_ID" --password "$APPLE_PASSWORD" \
             --team-id "$APPLE_TEAM_ID" --wait
 
@@ -133,8 +133,8 @@ jobs:
         if: matrix.platform != 'windows-latest'
         run: |
           set -euo pipefail
-          tar -czf "papr-${{ matrix.cli_target }}.tar.gz" \
-            -C "target/${{ matrix.cli_target }}/release" papr
+          tar -czf "scout-${{ matrix.cli_target }}.tar.gz" \
+            -C "target/${{ matrix.cli_target }}/release" scout
 
       - name: Upload CLI to the release
         shell: bash
@@ -147,5 +147,5 @@ jobs:
         run: |
           set -euo pipefail
           # Exactly one of .tar.gz (Unix) / .zip (Windows) exists for this target.
-          asset=$(echo papr-${{ matrix.cli_target }}.*)
+          asset=$(echo scout-${{ matrix.cli_target }}.*)
           gh release upload "$RELEASE_TAG" "$asset" --clobber --repo "$GH_REPO"

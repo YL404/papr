@@ -72,8 +72,8 @@ mod tests {
     #[test]
     fn renders_scalars_in_insertion_order() {
         let mut d = Doc::new();
-        d.set("unread", 206).set("starred", 17).set("db", "~/x/papr.db");
-        assert_eq!(d.into_toon(), "unread: 206\nstarred: 17\ndb: ~/x/papr.db\n");
+        d.set("unread", 206).set("starred", 17).set("db", "~/x/scout.db");
+        assert_eq!(d.into_toon(), "unread: 206\nstarred: 17\ndb: ~/x/scout.db\n");
     }
 
     #[test]
@@ -116,8 +116,8 @@ mod tests {
         assert_eq!(empty.into_toon(), "ok: done\n");
 
         let mut with = Doc::new();
-        with.set("count", 1).help(vec!["Run `papr read <id>`".to_string()]);
-        assert_eq!(with.into_toon(), "count: 1\nhelp[1]: Run `papr read <id>`\n");
+        with.set("count", 1).help(vec!["Run `scout read <id>`".to_string()]);
+        assert_eq!(with.into_toon(), "count: 1\nhelp[1]: Run `scout read <id>`\n");
     }
 
     #[test]

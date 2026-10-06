@@ -313,7 +313,7 @@ static MIGRATIONS: LazyLock<Migrations> = LazyLock::new(|| {
     ])
 });
 
-/// Register Papr's custom SQL scalar functions on a freshly opened connection.
+/// Register Scout's custom SQL scalar functions on a freshly opened connection.
 ///
 /// SQLite's built-in `LOWER()` only case-folds ASCII (it has no Unicode
 /// awareness without the ICU extension, which the bundled build omits). Rust's
@@ -754,7 +754,7 @@ pub fn delete_feed(conn: &Connection, id: i64) -> AppResult<()> {
 /// Feeds for OPML export as `(title, feed_url, folder)` tuples. Sources with a
 /// synthetic non-HTTP `feed_url` are excluded: OPML is an RSS-subscription
 /// interchange format, and exporting such a URL would emit an `<outline
-/// xmlUrl="imap://…">` that any reader (Papr's own `import_opml` included)
+/// xmlUrl="imap://…">` that any reader (Scout's own `import_opml` included)
 /// would treat as an RSS feed and then fail to HTTP-fetch forever.
 pub fn feeds_for_export(conn: &Connection) -> AppResult<Vec<(String, String, Option<String>)>> {
     let mut stmt = conn.prepare(

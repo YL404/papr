@@ -11,7 +11,7 @@ export type IconName =
   | "open" | "share" | "send" | "more" | "refresh" | "settings" | "chevron-down"
   | "chevron-right" | "globe" | "focus" | "arrow-down" | "arrow-up"
   | "eye" | "eye-off" | "trash" | "mute" | "pin" | "x" | "command"
-  | "copy" | "list" | "grid" | "text" | "alert" | "papr"
+  | "copy" | "list" | "grid" | "text" | "alert" | "scout"
   | "play" | "pause" | "skip-back" | "skip-fwd" | "headphones"
   | "wide";
 
@@ -148,8 +148,14 @@ export default function Icon({
       return <svg {...p}><path d="M13 5a7 7 0 1 0 6.32 4" /><path d="M19 3.5 19.5 9 14 8.5" /></svg>;
     case "headphones":
       return <svg {...p}><path d="M4 14v-2a8 8 0 0 1 16 0v2" /><rect x="2.5" y="13" width="4.5" height="7" rx="2.2" /><rect x="17" y="13" width="4.5" height="7" rx="2.2" /></svg>;
-    case "papr":
-      return <svg {...p}><path d="M6 3h7l5 5v12a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" /><path d="M13 3v4a1 1 0 0 0 1 1h4" /><path d="M8 13.5a3.5 3.5 0 0 1 3.5 3.5M8 11a6 6 0 0 1 6 6" /><circle cx="8" cy="17" r="1.1" fill={color} stroke="none" /></svg>;
+    case "scout":
+      return (
+        <svg {...p} viewBox="0 0 24 24">
+          <path d="M16.5 6.5 C 14.5 4.5, 9.5 4.5, 8 7 C 6.5 9.5, 9.5 11, 12 12 C 14.5 13, 17.5 14.5, 16 17 C 14.5 19.5, 9.5 19.5, 7.5 17.5" />
+          <circle cx="17.5" cy="5.5" r="1.5" fill={color} stroke="none" />
+          <circle cx="6.5" cy="18.5" r="1.5" fill={color} stroke="none" />
+        </svg>
+      );
     default:
       return null;
   }

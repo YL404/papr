@@ -179,7 +179,7 @@ const READER_IMAGE_MAX_DIM = 2048;
 
 /** Rewrite Next.js optimizer URLs to their original assets and strip every
  *  network image src out of the body before it's injected, keeping the real
- *  address in `data-papr-src` for the scaled-fetch pass (below). Injection
+ *  address in `data-scout-src` for the scaled-fetch pass (below). Injection
  *  with no src means the webview never even starts a full-resolution load;
  *  the `width`/`height` attributes keep the layout stable while the scaled
  *  data: URLs fill in. Returns the html untouched when it has no such images. */
@@ -191,7 +191,7 @@ function prepareBody(body: string, baseUrl: string | null): string {
     const src = img.getAttribute("src") || "";
     const orig = nextImageOriginalUrl(src, baseUrl) ?? src;
     if (!/^https?:\/\//.test(orig)) continue;
-    img.setAttribute("data-papr-src", orig);
+    img.setAttribute("data-scout-src", orig);
     img.removeAttribute("src");
     img.removeAttribute("srcset");
     img.removeAttribute("sizes");
@@ -433,7 +433,7 @@ export default function Reader({ onToast }: Props) {
   // can't vary the value per host. So a failed image gets one retry through
   // the backend, which walks Referer fallbacks (fetch_image_scaled) and
   // returns display-sized bytes; the <img> is swapped to an inline data: URL,
-  // with the original kept in data-papr-src for the context-menu actions. A
+  // with the original kept in data-scout-src for the context-menu actions. A
   // data: URL (not blob:) is
   // deliberate — WKWebView/WebView2 silently drop a blob:'s backing data under
   // memory pressure (e.g. layer recompositing while scrolling), so a recovered
@@ -449,22 +449,22 @@ export default function Reader({ onToast }: Props) {
     let alive = true;
     const recover = async (img: HTMLImageElement) => {
       const src = img.getAttribute("src") || "";
-      if (img.dataset.paprRetried || !/^https?:\/\//.test(src)) {
+      if (img.dataset.scoutRetried || !/^https?:\/\//.test(src)) {
         img.style.display = "none";
         return;
       }
-      img.dataset.paprRetried = "1";
+      img.dataset.scoutRetried = "1";
       try {
         const buf = await api.fetchImageScaled(src, pageUrl, READER_IMAGE_MAX_DIM);
         if (!alive) return;
-        img.dataset.paprSrc = src;
+        img.dataset.scoutSrc = src;
         img.src = imageDataUrl(src, buf);
       } catch {
         img.style.display = "none";
       }
     };
     const recoverIfBroken = (img: HTMLImageElement) => {
-      if (img.dataset.paprRetried) return;
+      if (img.dataset.scoutRetried) return;
       // An img still waiting for the scaled-fetch pass has no src yet — not
       // broken, just pending. `complete` is trivially true for a src-less img,
       // so it needs this guard to stay out of the retry path.
@@ -634,7 +634,7 @@ export default function Reader({ onToast }: Props) {
     if (!el) return;
     let alive = true;
     const fill = async (img: HTMLImageElement) => {
-      const src = img.dataset.paprSrc;
+      const src = img.dataset.scoutSrc;
       if (!src) return;
       // A re-injected body (article switch, translation toggle) wipes img srcs;
       // the session map re-fills those from memory without an IPC round trip.
@@ -656,7 +656,7 @@ export default function Reader({ onToast }: Props) {
       }
     };
     for (const img of el.querySelectorAll<HTMLImageElement>(
-      "img[data-papr-src]",
+      "img[data-scout-src]",
     )) {
       if (img.getAttribute("src")) continue; // already filled or restored
       void fill(img);
@@ -679,9 +679,9 @@ export default function Reader({ onToast }: Props) {
     if (!el) return;
     const sourceUrl = a?.url ?? null;
     for (const link of el.querySelectorAll<HTMLAnchorElement>("a[href]")) {
-      link.removeAttribute("data-papr-inpage");
+      link.removeAttribute("data-scout-inpage");
       if (inPageFragment(link.getAttribute("href")!, sourceUrl) != null) {
-        link.setAttribute("data-papr-inpage", "");
+        link.setAttribute("data-scout-inpage", "");
       }
     }
   }, [displayBody, a?.url, viewMode]);
@@ -1166,9 +1166,9 @@ export default function Reader({ onToast }: Props) {
           setCtxMenu({
             x: e.clientX,
             y: e.clientY,
-            // data-papr-src holds the real address when the image was
+            // data-scout-src holds the real address when the image was
             // recovered through the backend and src is an inline data: URL.
-            imageUrl: img?.dataset.paprSrc || img?.currentSrc || img?.getAttribute("src") || undefined,
+            imageUrl: img?.dataset.scoutSrc || img?.currentSrc || img?.getAttribute("src") || undefined,
             selection: selection || undefined,
           });
         }}
@@ -1243,7 +1243,7 @@ export default function Reader({ onToast }: Props) {
                 alt=""
                 // The original URL when src is a recovered data: URL, so the
                 // context-menu copy/save actions see a real address.
-                data-papr-src={heroDataUrl ? a.imageUrl : undefined}
+                data-scout-src={heroDataUrl ? a.imageUrl : undefined}
                 // No Referer, for the same hotlink-protection reason feed-body
                 // images are sanitized this way (e.g. *.sinaimg.cn 403s a
                 // request carrying our origin). See `sanitize`.

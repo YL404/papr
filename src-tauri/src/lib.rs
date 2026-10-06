@@ -1,12 +1,12 @@
-//! Papr — a local-first RSS reader. Tauri application entry point: opens the
+//! Scout — a local-first RSS reader. Tauri application entry point: opens the
 //! database, wires shared state, installs the macOS tray, and starts the
 //! background refresh scheduler.
 
 // The data layer, ingestion building blocks, sanitization and OPML now live in
-// `papr-core` (shared with the agent CLI). Re-export them under their original
+// `scout-core` (shared with the agent CLI). Re-export them under their original
 // crate paths so the rest of the app keeps referring to `crate::db`,
 // `crate::ingestion`, etc. unchanged.
-pub use papr_core::{ai, db, error, extraction, ingestion, models, opml, sanitize};
+pub use scout_core::{ai, db, error, extraction, ingestion, models, opml, sanitize};
 
 mod backing;
 mod commands;
@@ -14,7 +14,7 @@ mod fonts;
 mod notify;
 mod page_view;
 // The tauri-coupled refresh scheduler (progress channels, AppHandle) — built on
-// top of `papr_core::ingestion`. Was `ingestion::scheduler` before the split.
+// top of `scout_core::ingestion`. Was `ingestion::scheduler` before the split.
 mod scheduler;
 mod state;
 mod summary;
@@ -27,6 +27,7 @@ use tauri::Manager;
 
 /// Number of read-only connections in the UI query pool.
 const READ_POOL_SIZE: usize = 4;
+
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -45,7 +46,7 @@ pub fn run() {
             // ── Database ──────────────────────────────────────────────
             let data_dir = app.path().app_data_dir().expect("resolve app data dir");
             fs::create_dir_all(&data_dir).ok();
-            let db_path = data_dir.join("papr.db");
+            let db_path = data_dir.join("scout.db");
             let conn = db::open(&db_path).expect("open database");
             // A small pool of read-only connections for UI queries — under WAL
             // they run concurrently with the writer, so the interface stays
@@ -233,5 +234,5 @@ pub fn run() {
             page_view::close_page_view,
         ])
         .run(tauri::generate_context!())
-        .expect("error while running Papr");
+        .expect("error while running Scout");
 }

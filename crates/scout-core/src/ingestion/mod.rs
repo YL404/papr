@@ -1,7 +1,7 @@
 //! Ingestion: fetching feeds over HTTP and parsing them into articles.
 //!
 //! The tauri-coupled refresh *scheduler* (progress channels, AppHandle) lives
-//! in the desktop app (`papr_lib::scheduler`); this crate exposes only the
+//! in the desktop app (`scout_lib::scheduler`); this crate exposes only the
 //! reusable, UI-free building blocks it is composed from.
 
 pub mod discovery;

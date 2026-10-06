@@ -1493,7 +1493,7 @@ button { font-family: inherit; }
    `:not([href^="#"])` so they out-specify the rule above (0,3,2 vs 0,3,1) —
    a `:has()` on its own only reaches (0,2,2) and would silently lose. */
 .article-body a[href]:not([href^="#"]):has(> p, > div, > section, > article, > h1, > h2, > h3, > h4, > h5, > h6, > ul, > ol, > li, > table, > figure, > blockquote, > pre, > img, > picture, > svg, > video, > iframe)::after,
-.article-body a[href]:not([href^="#"])[data-papr-inpage]::after { content: none; }
+.article-body a[href]:not([href^="#"])[data-scout-inpage]::after { content: none; }
 .article-body a[href]:not([href^="#"]):hover::after,
 .ai-prose a[href]:hover::after { opacity: 1; }
 .article-body figure {

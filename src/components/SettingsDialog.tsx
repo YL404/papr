@@ -170,7 +170,7 @@ export default function SettingsDialog({
           ))}
           <div className="settings-nav-spacer" />
           <div className="settings-version">
-            Papr{version && ` ${version}`}
+            Scout{version && ` ${version}`}
           </div>
         </div>
 
@@ -1837,7 +1837,7 @@ type TranslateEngine = "llm" | "google" | "deepl" | "bing";
 
 /** The provider kinds Settings → AI can configure. The wire format each kind
  *  speaks (Anthropic messages vs OpenAI-compatible chat completions) is
- *  decided in `papr_core::ai`; these labels are display-only. */
+ *  decided in `scout_core::ai`; these labels are display-only. */
 const AI_KINDS: { value: AiProviderKind; label: string }[] = [
   { value: "anthropic", label: "Anthropic" },
   { value: "openai", label: "OpenAI" },
@@ -2443,9 +2443,9 @@ function AboutSection() {
   return (
     <div className="s-about">
       <div className="mark">
-        <Icon name="papr" size={34} color="#fff" />
+        <Icon name="scout" size={34} color="#fff" />
       </div>
-      <h1 className="app-name">Papr</h1>
+      <h1 className="app-name">Scout</h1>
       <p className="tagline">{t("settings.about.tagline")}</p>
       <div className="version">
         Version{version && ` ${version}`}

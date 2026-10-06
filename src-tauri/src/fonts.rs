@@ -10,7 +10,7 @@
 //!
 //! The scan is a blocking walk of possibly thousands of files, so the command
 //! runs it on a background thread and the result is cached for the process
-//! lifetime — installing a font while Papr is open needs a relaunch to appear,
+//! lifetime — installing a font while Scout is open needs a relaunch to appear,
 //! which matches every native font picker.
 
 use std::collections::BTreeSet;
