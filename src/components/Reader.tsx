@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import * as api from "../api";
@@ -978,6 +978,32 @@ export default function Reader({ onToast }: Props) {
   // ones drawn ▓ over ░, with a zero-padded percentage on the right.
   const progFilled = Math.round(readProg * 28);
 
+  const metaItems: React.ReactNode[] = [];
+  if (a.author) {
+    metaItems.push(
+      <span key="author" className="author">
+        {a.author}
+      </span>,
+    );
+  }
+  if (a.publishedAt) {
+    metaItems.push(
+      <span key="published">{fullDate(a.publishedAt)}</span>,
+    );
+  }
+  if (showReadingTime) {
+    metaItems.push(
+      <span key="reading-time">
+        {t("reader.readMinutes", { count: readMinutes })}
+      </span>,
+    );
+  }
+  if (extract.isPending) {
+    metaItems.push(
+      <span key="extracting">{t("reader.extractingFullText")}</span>,
+    );
+  }
+
   return (
     <div className="reader" role="main">
       <div
@@ -1160,23 +1186,16 @@ export default function Reader({ onToast }: Props) {
             {a.feedTitle}
           </button>
           <h1 className="article-title" ref={titleRef}>{a.title}</h1>
-          <div className="article-meta">
-            {a.author && <span className="author">{a.author}</span>}
-            {a.author && a.publishedAt && <span>·</span>}
-            {a.publishedAt && <span>{fullDate(a.publishedAt)}</span>}
-            {showReadingTime && (
-              <>
-                <span>·</span>
-                <span>{t("reader.readMinutes", { count: readMinutes })}</span>
-              </>
-            )}
-            {extract.isPending && (
-              <>
-                <span>·</span>
-                <span>{t("reader.extractingFullText")}</span>
-              </>
-            )}
-          </div>
+          {metaItems.length > 0 && (
+            <div className="article-meta">
+              {metaItems.map((item, idx) => (
+                <Fragment key={idx}>
+                  {idx > 0 && <span>·</span>}
+                  {item}
+                </Fragment>
+              ))}
+            </div>
+          )}
 
           {a.tags.length > 0 && (
             <div className="article-tags">
