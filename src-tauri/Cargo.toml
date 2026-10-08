@@ -1,6 +1,6 @@
 [package]
 name = "scout"
-version = "0.16.0"
+version = "0.16.1"
 description = "Scout — a modern RSS reader"
 authors = ["you"]
 edition = "2021"

@@ -1,6 +1,6 @@
 [package]
 name = "scout-cli"
-version = "0.16.0"
+version = "0.16.1"
 edition = "2021"
 description = "scout — an agent-facing CLI over your Scout RSS feeds: read, search, triage and refresh from the shell."
 
