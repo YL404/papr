@@ -256,34 +256,38 @@ function isAnchor(el: Element): boolean {
 
 /** Collapse the blank-line runs among `el`'s children, recursing into child
  *  containers first so nesting (`<section><p></p>…</section>`) is counted on
- *  the already-collapsed inner content. Returns the number of nodes removed. */
+ *  the already-collapsed inner content. Returns the number of mutations. */
 function collapseBlankRunsIn(el: Element): number {
-  let removed = 0;
+  let changed = 0;
   for (const c of Array.from(el.children)) {
-    if (!SKIP_INNER.has(c.tagName)) removed += collapseBlankRunsIn(c);
+    if (!SKIP_INNER.has(c.tagName)) changed += collapseBlankRunsIn(c);
   }
   let run: Element[] = [];
   // Whether the content before the current run is inline — a `<br>` right
-  // after inline content is a line break, so the run shows one blank line
-  // fewer. Every other unit (`<br>` after block content, empty block)
-  // renders one blank line each.
+  // after inline content is only a line break, not a blank line.
   let prevInline = false;
   const flush = () => {
-    const firstIsBreak = prevInline && run[0]?.tagName === "BR";
-    if (run.length - (firstIsBreak ? 1 : 0) > 2) {
-      // Keep just enough leading units to leave one blank line standing.
-      let delivered = 0;
-      let first = true;
-      for (const u of run) {
-        const gives = first && firstIsBreak ? 0 : 1;
-        first = false;
-        if (isAnchor(u) || delivered + gives <= 1) {
-          delivered += gives;
-          continue;
-        }
-        u.remove();
-        removed++;
+    // Normalize every run to a single `<br>` (one blank line). In inline
+    // context the first `<br>` is the line break itself, so two are kept.
+    // A kept empty *block* is swapped for a bare `<br>` — its own margin on
+    // top of the line box would render noticeably more than one blank line,
+    // which is the whole complaint (e.g. huxiu's `<p><br></p>` separators).
+    let need = prevInline && run[0]?.tagName === "BR" ? 2 : 1;
+    for (const u of run) {
+      if (isAnchor(u)) {
+        need--;
+        continue;
       }
+      if (need > 0) {
+        need--;
+        if (u.tagName !== "BR") {
+          u.replaceWith(el.ownerDocument.createElement("br"));
+          changed++;
+        }
+        continue;
+      }
+      u.remove();
+      changed++;
     }
     run = [];
   };
@@ -307,15 +311,16 @@ function collapseBlankRunsIn(el: Element): number {
     }
   }
   flush();
-  return removed;
+  return changed;
 }
 
-/** Collapse blank-line runs longer than two down to a single blank line.
- *  公众号-style feeds often ship long chains of `<br>`s or empty `<p>`s
- *  between real paragraphs; rendered, every one is a blank line and the gap
- *  looks broken. Runs of one or two are left alone. Returns the input
- *  untouched when nothing qualified, so the caller keeps the original
- *  string's referential stability. */
+/** Collapse every blank-line run in the body down to a single `<br>` — one
+ *  blank line. Feeds pad paragraph spacing with empty `<p>`s (`<p><br></p>`
+ *  separators are 公众号-style markup) and `<br>` chains; rendered, each
+ *  empty block is ~two blank lines once its margin counts, so even a single
+ *  one is excess. Runs that already are a bare `<br>` (or a `<br>` line
+ *  break in inline text) pass through untouched. Returns the input itself
+ *  when nothing changed, keeping the string's referential stability. */
 function collapseBlankLines(html: string): string {
   if (!html) return html;
   const doc = new DOMParser().parseFromString(html, "text/html");

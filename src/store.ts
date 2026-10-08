@@ -204,9 +204,9 @@ interface UiState {
    *  (the F/W pair). A reading preference like density / view mode — persisted
    *  so it survives a relaunch. */
   wide: boolean;
-  /** Collapse blank-line runs longer than two in the article body down to a
-   *  single one — 公众号-style feeds often ship long chains of `<br>`s or
-   *  empty paragraphs between real paragraphs. Toggled from the reader
+  /** Normalize blank-line runs in the article body to a single `<br>` —
+   *  公众号-style feeds separate paragraphs with empty `<p>`s or `<br>`
+   *  chains that render as multi-line gaps. Toggled from the reader
    *  toolbar, default on, persisted like `wide`. */
   collapseBlanks: boolean;
   /** Bumped to ask the reader to generate an AI summary for the open article
