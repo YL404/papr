@@ -200,6 +200,128 @@ function prepareBody(body: string, baseUrl: string | null): string {
   return stripped ? doc.body.innerHTML : body;
 }
 
+/** Whitespace that renders nothing — \s already covers `&nbsp;`, the Unicode
+ *  space separators, the ideographic space and the BOM; on top it takes the
+ *  zero-width space / joiner runs feeds use to pad "empty" paragraphs. */
+const BLANK_TEXT = /^[\s\u200b\u200c\u200d]*$/;
+
+/** Elements whose mere presence renders something — an ancestor holding one
+ *  can't be a blank unit even without text (an `<img>`, an `<hr>` drawn as a
+ *  rule, a `<table>` as layout). `<br>` is deliberately absent: it's a blank
+ *  unit of its own. */
+const VISIBLE_TAGS = new Set([
+  "IMG", "VIDEO", "AUDIO", "IFRAME", "OBJECT", "EMBED", "SVG", "CANVAS",
+  "MATH", "HR", "TABLE", "PRE", "INPUT", "SELECT", "TEXTAREA", "BUTTON",
+  "PICTURE", "SOURCE", "TRACK", "MAP", "METER", "PROGRESS", "DETAILS",
+  "FIELDSET", "FRAME", "FRAMESET",
+]);
+
+/** Block-level tags — tells a blank *block* (one blank line) from an empty
+ *  inline element (`<span></span>`, `<a name>`), which renders nothing and is
+ *  transparent inside a run instead of counting or breaking it. */
+const BLOCK_TAGS = new Set([
+  "P", "DIV", "SECTION", "ARTICLE", "HEADER", "FOOTER", "ASIDE", "MAIN",
+  "NAV", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "UL", "OL",
+  "LI", "DL", "DT", "DD", "FIGURE", "FIGCAPTION", "FORM", "ADDRESS",
+  "SUMMARY", "HGROUP",
+]);
+
+/** Elements whose insides aren't paragraph flow — whitespace in `<pre>` is
+ *  content, and an empty table cell is layout, not a blank line. */
+const SKIP_INNER = new Set(["TABLE", "PRE", "TEXTAREA", "SCRIPT", "STYLE"]);
+
+/** True when the element renders as vertical whitespace only: no visible
+ *  text (`&nbsp;`/zero-width padding doesn't count) and no meaningful
+ *  descendant. `<br>`s inside don't disqualify — they're part of the gap. */
+function rendersNothing(el: Element): boolean {
+  for (const n of el.childNodes) {
+    if (n.nodeType === Node.TEXT_NODE) {
+      if (!BLANK_TEXT.test(n.textContent ?? "")) return false;
+    } else if (n.nodeType === Node.ELEMENT_NODE) {
+      const c = n as Element;
+      if (c.tagName !== "BR" && (VISIBLE_TAGS.has(c.tagName) || !rendersNothing(c))) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+/** A unit that must survive collapsing: an element carrying an `id`/`name`
+ *  (or containing one) is an in-page anchor target — removing it would break
+ *  footnote / table-of-contents links (see `inPageFragment`). */
+function isAnchor(el: Element): boolean {
+  return !!el.id || el.hasAttribute("name") || !!el.querySelector("[id],[name]");
+}
+
+/** Collapse the blank-line runs among `el`'s children, recursing into child
+ *  containers first so nesting (`<section><p></p>…</section>`) is counted on
+ *  the already-collapsed inner content. Returns the number of nodes removed. */
+function collapseBlankRunsIn(el: Element): number {
+  let removed = 0;
+  for (const c of Array.from(el.children)) {
+    if (!SKIP_INNER.has(c.tagName)) removed += collapseBlankRunsIn(c);
+  }
+  let run: Element[] = [];
+  // Whether the content before the current run is inline — a `<br>` right
+  // after inline content is a line break, so the run shows one blank line
+  // fewer. Every other unit (`<br>` after block content, empty block)
+  // renders one blank line each.
+  let prevInline = false;
+  const flush = () => {
+    const firstIsBreak = prevInline && run[0]?.tagName === "BR";
+    if (run.length - (firstIsBreak ? 1 : 0) > 2) {
+      // Keep just enough leading units to leave one blank line standing.
+      let delivered = 0;
+      let first = true;
+      for (const u of run) {
+        const gives = first && firstIsBreak ? 0 : 1;
+        first = false;
+        if (isAnchor(u) || delivered + gives <= 1) {
+          delivered += gives;
+          continue;
+        }
+        u.remove();
+        removed++;
+      }
+    }
+    run = [];
+  };
+  for (const n of Array.from(el.childNodes)) {
+    if (n.nodeType === Node.TEXT_NODE) {
+      if (BLANK_TEXT.test(n.textContent ?? "")) continue;
+      flush();
+      prevInline = true;
+      continue;
+    }
+    if (n.nodeType !== Node.ELEMENT_NODE) continue; // comments are transparent
+    const c = n as Element;
+    if (c.tagName === "BR") {
+      run.push(c);
+    } else if (rendersNothing(c)) {
+      if (BLOCK_TAGS.has(c.tagName)) run.push(c); // empty block: a blank line
+      // empty inline element: transparent — neither counts nor breaks a run
+    } else {
+      flush();
+      prevInline = !BLOCK_TAGS.has(c.tagName);
+    }
+  }
+  flush();
+  return removed;
+}
+
+/** Collapse blank-line runs longer than two down to a single blank line.
+ *  公众号-style feeds often ship long chains of `<br>`s or empty `<p>`s
+ *  between real paragraphs; rendered, every one is a blank line and the gap
+ *  looks broken. Runs of one or two are left alone. Returns the input
+ *  untouched when nothing qualified, so the caller keeps the original
+ *  string's referential stability. */
+function collapseBlankLines(html: string): string {
+  if (!html) return html;
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  return collapseBlankRunsIn(doc.body) > 0 ? doc.body.innerHTML : html;
+}
+
 /** Session cache of filled data: URLs, keyed by the original image URL. Makes
  *  fills survive body re-injections (a re-injected img is re-filled from the
  *  map instantly instead of re-requesting). */
@@ -233,6 +355,8 @@ export default function Reader({ onToast }: Props) {
   const [viewMode, setViewMode] = useState<"reader" | "web">("reader");
   const wide = useUi((s) => s.wide);
   const setWide = useUi((s) => s.setWide);
+  const collapseBlanks = useUi((s) => s.collapseBlanks);
+  const setCollapseBlanks = useUi((s) => s.setCollapseBlanks);
   const [tagPick, setTagPick] = useState<{ x: number; y: number } | null>(null);
   const [ctxMenu, setCtxMenu] = useState<{
     x: number;
@@ -440,7 +564,8 @@ export default function Reader({ onToast }: Props) {
   // image carried by a blob: vanishes when the user scrolls away and back; the
   // inline data: bytes always repaint. Images the backend can't recover are
   // hidden — a broken-image icon mid-article is just noise. Runs whenever the
-  // body changes (article switch, extract toggle, extraction finishing).
+  // body changes (article switch, extract toggle, extraction finishing, the
+  // blank-line collapse toggle).
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
@@ -503,7 +628,7 @@ export default function Reader({ onToast }: Props) {
       timers.forEach(window.clearTimeout);
       watched.forEach((img) => img.removeEventListener("error", onError));
     };
-  }, [a?.id, a?.url, showExtracted, a?.extractedHtml, showTranslation, a?.translatedHtml]);
+  }, [a?.id, a?.url, showExtracted, a?.extractedHtml, showTranslation, a?.translatedHtml, collapseBlanks]);
 
   // Same proactive proxy for the reader hero. These hosts need a Referer that
   // only the Rust fetch path can provide; waiting for `onError` leaves a broken
@@ -601,8 +726,12 @@ export default function Reader({ onToast }: Props) {
       (translating ? `<p><em>${t("reader.translating")}</em></p>` : baseBody)
     : baseBody;
   const displayBody = useMemo(
-    () => prepareBody(body, a?.url ?? null),
-    [body, a?.url],
+    () =>
+      prepareBody(
+        collapseBlanks ? collapseBlankLines(body) : body,
+        a?.url ?? null,
+      ),
+    [body, a?.url, collapseBlanks],
   );
   // The injected-HTML prop object must be referentially stable while the string
   // is unchanged: React 19's host-update path compares prop values by identity
@@ -1082,6 +1211,15 @@ export default function Reader({ onToast }: Props) {
           <Icon name="globe" size={16} />
         </button>
         <div className="tb-btn spacer" />
+        <button
+          className={`tb-btn ${collapseBlanks ? "on" : ""}`}
+          title={t("reader.tbCollapseBlanks")}
+          aria-label={t("reader.tbCollapseBlanks")}
+          aria-pressed={collapseBlanks}
+          onClick={() => setCollapseBlanks(!collapseBlanks)}
+        >
+          <Icon name="fold" size={16} />
+        </button>
         <button
           className={`tb-btn ${wide ? "on" : ""}`}
           title={t("reader.tbWideMode")}

@@ -204,6 +204,11 @@ interface UiState {
    *  (the F/W pair). A reading preference like density / view mode — persisted
    *  so it survives a relaunch. */
   wide: boolean;
+  /** Collapse blank-line runs longer than two in the article body down to a
+   *  single one — 公众号-style feeds often ship long chains of `<br>`s or
+   *  empty paragraphs between real paragraphs. Toggled from the reader
+   *  toolbar, default on, persisted like `wide`. */
+  collapseBlanks: boolean;
   /** Bumped to ask the reader to generate an AI summary for the open article
    *  (the I shortcut, the command palette, the reader's context menu). The
    *  summary itself is an inline section at the top of the article that owns
@@ -246,6 +251,7 @@ interface UiState {
 
   setFocusMode: (v: boolean) => void;
   setWide: (v: boolean) => void;
+  setCollapseBlanks: (v: boolean) => void;
   requestAiSummary: () => void;
   setModalOpen: (v: boolean) => void;
   setMenuOpen: (v: boolean) => void;
@@ -372,6 +378,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   focusMode: false,
   wide: ls.bool("wide", false),
+  collapseBlanks: ls.bool("collapseBlanks", true),
   aiSummaryRequest: 0,
   modalOpen: false,
   menuOpen: false,
@@ -443,6 +450,7 @@ export const useUi = create<UiState>((set, get) => ({
 
   setFocusMode: (focusMode) => set({ focusMode }),
   setWide: (wide) => { ls.set("wide", wide); set({ wide }); },
+  setCollapseBlanks: (collapseBlanks) => { ls.set("collapseBlanks", collapseBlanks); set({ collapseBlanks }); },
   requestAiSummary: () =>
     set((s) => ({ aiSummaryRequest: s.aiSummaryRequest + 1 })),
   setModalOpen: (modalOpen) => set({ modalOpen }),

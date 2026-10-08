@@ -62,6 +62,24 @@ describe("wide mode persistence", () => {
   });
 });
 
+// Same persistence contract as `wide`, except the blank-line collapse ships
+// on by default — the toggle exists to give the original spacing back.
+describe("blank-line collapse persistence", () => {
+  it("defaults to on", async () => {
+    const useUi = await freshStore();
+    expect(useUi.getState().collapseBlanks).toBe(true);
+  });
+
+  it("remembers turning it off across a relaunch", async () => {
+    const useUi = await freshStore();
+    useUi.getState().setCollapseBlanks(false);
+    expect(store.getItem("collapseBlanks")).toBe("0");
+
+    const relaunched = await freshStore();
+    expect(relaunched.getState().collapseBlanks).toBe(false);
+  });
+});
+
 // A refresh is driven entirely by the backend's `refresh-progress` stream, and
 // the sidebar renders straight off this state — so the accounting (and the idle
 // tick that must *not* light the UI) is worth pinning down.
